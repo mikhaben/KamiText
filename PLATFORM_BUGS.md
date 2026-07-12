@@ -70,6 +70,24 @@ a code pointer · **Upstream**: FB number if filed, else `none filed` · **Retes
 - **Upstream**: none filed.
 - **Retest**: 2026-10-12.
 
+### 6. UIKit undo fires `textViewDidChange` with no `shouldChangeTextIn` — recovery reseed must be attribute-only
+
+- **Status**: Active-workaround
+- **Affected**: iOS, UIKit `UITextView` undo/redo. Versions: not recorded (reported from a consumer app, 2026-07-12).
+- **Symptom**: undo mutates the storage and fires `textViewDidChange` without the pre-edit hook, so `KamiTextSync` has no stash and takes its desync-recovery reseed. When that reseed replaced the whole storage via `setAttributedString`, UIKit reset the caret rendering and undo coalescing at exactly the moment the user was interacting — perceived as "the cursor disappears after undo".
+- **Workaround**: `KamiTextSync.seed` restyles **in place** (attribute-only full pass, zero character edits) whenever the storage already holds the target text — true for every recovery reseed, since the storage is the source of truth and only the engine is stale. Code pointers: `KamiTextSync.swift` (`seed`, in-place branch); pinned by `CaretRecoveryTests.desyncRecoveryReseedIsAttributeOnly`.
+- **Upstream**: none filed.
+- **Retest**: 2026-10-12.
+
+### 7. `UITextView` caret stops rendering after storage mutation inside the selection-change callback
+
+- **Status**: Active-workaround (device verification pending — the mechanism is reproduced in tests, the visual repro needs a real device pass)
+- **Affected**: iOS, UIKit `UITextView`. Versions: not recorded (reported from a consumer app, 2026-07-12).
+- **Symptom**: reveal/conceal restyles storage attributes under the caret inside `textViewDidChangeSelection`; UIKit's selection view can leave the caret un-drawn until the next input — perceived as "the cursor disappears when moving the caret near markers".
+- **Workaround**: `KamiTextSync.selectionChanged` returns whether it restyled (`@discardableResult Bool`); UIKit hosts refresh the caret after a `true` return by reassigning `textView.selectedTextRange = textView.selectedTextRange`. AppKit hosts use `updateInsertionPointStateAndRestartTimer(true)` — wired in `KamiDemoMac/main.swift` (`textViewDidChangeSelection`). Return values pinned by `CaretRecoveryTests.selectionChangedReportsRestyles`.
+- **Upstream**: none filed.
+- **Retest**: 2026-10-12.
+
 ## Negative findings
 
 Investigated, confirmed not a bug — kept here so these are not re-investigated.

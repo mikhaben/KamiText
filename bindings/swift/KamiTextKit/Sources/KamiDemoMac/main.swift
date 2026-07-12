@@ -303,12 +303,18 @@ final class DemoController: NSObject, NSApplicationDelegate, NSTextViewDelegate 
 
     func textViewDidChangeSelection(_ notification: Notification) {
         guard let textView, let storage = textView.textStorage else { return }
-        sync.selectionChanged(
+        let restyled = sync.selectionChanged(
             selectedRange: textView.selectedRange(),
             text: storage.string,
             storage: storage,
             isComposing: textView.hasMarkedText()
         )
+        // Caret-refresh host recipe (see `KamiTextSync.selectionChanged`):
+        // restyling under the caret inside the selection-change callback can
+        // leave the insertion point un-drawn; restart it after a restyle.
+        if restyled {
+            textView.updateInsertionPointStateAndRestartTimer(true)
+        }
     }
 }
 

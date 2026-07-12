@@ -88,12 +88,29 @@ public final class KamiTextSync {
     /// NOT fire edit delegates for those), and as the desync/composition-end
     /// fallback. One full parse — none of these call sites are on the hot
     /// per-keystroke path.
+    ///
+    /// When `storage` already holds exactly `text` — true for every
+    /// desync-recovery reseed (undo, stranded composition), where the storage
+    /// is the source of truth and only the engine is stale — the restyle is
+    /// applied **in place as an attribute-only pass**: no character
+    /// replacement means the view's caret, selection, scroll position, and
+    /// the host's undo stack all survive. UIKit in particular resets its
+    /// caret rendering and undo coalescing on a whole-storage
+    /// `setAttributedString`, which is exactly the moment a recovery reseed
+    /// runs. The character-replacing path remains for genuine loads where
+    /// the storage does not yet hold `text`.
     public func seed(text: String, storage: NSTextStorage, selectedRange: NSRange) {
         pendingEdit = nil
         do {
             let engine = try KamiEngine(text: text, options: options)
             self.engine = engine
-            try applier.applyFull(engine: engine, to: storage)
+            if storage.string == text {
+                if engine.lenBytes > 0 {
+                    try applier.apply(KamiPatch(dirty: [0..<engine.lenBytes]), engine: engine, to: storage)
+                }
+            } else {
+                try applier.applyFull(engine: engine, to: storage)
+            }
             checkedTaskByteRanges = try checkedTaskRanges(engine: engine)
         } catch {
             log("seed error: \(error)")
@@ -300,28 +317,41 @@ public final class KamiTextSync {
     /// is in flight (platforms fire selection changes BEFORE the post-edit
     /// hook during a keystroke) or while composing; `didChange` re-syncs the
     /// selection itself once the edit lands.
-    public func selectionChanged(selectedRange: NSRange, text: String, storage: NSTextStorage, isComposing: Bool) {
-        guard pendingEdit == nil, !isComposing, let engine else { return }
+    ///
+    /// Returns `true` when the call restyled the storage (a reveal/conceal
+    /// flip, or a recovery reseed) and `false` for a pure no-op move. UIKit
+    /// hosts should refresh the caret after a `true` return — mutating
+    /// storage attributes inside the selection-change callback can leave
+    /// `UITextView`'s caret un-drawn until the next input; reassigning
+    /// `textView.selectedTextRange = textView.selectedTextRange` forces the
+    /// selection view to redraw. The AppKit equivalent is
+    /// `updateInsertionPointStateAndRestartTimer(true)` (wired in
+    /// `KamiDemoMac`).
+    @discardableResult
+    public func selectionChanged(selectedRange: NSRange, text: String, storage: NSTextStorage, isComposing: Bool) -> Bool {
+        guard pendingEdit == nil, !isComposing, let engine else { return false }
         guard engine.lenUtf16 == UInt32(storage.length) else {
             // Undo/redo bypasses both edit hooks on AppKit (verified: Cmd+Z
             // fires only a selection change) — a length mismatch here with no
-            // edit in flight IS the §4.6 desync, so recover instead of going
+            // edit in flight IS a desync, so recover instead of going
             // silent. A length-preserving undo still slips past this guard
             // until the next length change; hosts wanting bulletproof undo
             // coverage add an `NSTextStorageDelegate.didProcessEditing` hook
             // and reseed from there.
             log("length desync with no edit in flight (undo/redo?); reseeding")
             seed(text: text, storage: storage, selectedRange: selectedRange)
-            return
+            return true
         }
         do {
             let byteStart = try engine.utf16ToByte(UInt32(selectedRange.location))
             let byteEnd = try engine.utf16ToByte(UInt32(selectedRange.location + selectedRange.length))
             let patch = try engine.setSelection(byteStart..<byteEnd)
             try applier.apply(patch, engine: engine, to: storage)
+            return !patch.dirty.isEmpty
         } catch {
             log("selection sync error: \(error); reseeding")
             seed(text: text, storage: storage, selectedRange: selectedRange)
+            return true
         }
     }
 
