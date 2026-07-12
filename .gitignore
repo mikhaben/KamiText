@@ -1,0 +1,9 @@
+target/
+DerivedData/
+.DS_Store
+*.xcframework
+.build/
+.swiftpm/
+xcuserdata/
+.dd/
+docs/

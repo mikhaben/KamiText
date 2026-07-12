@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "element-reveal-multiline-span",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "element"},
+  "text": "**a\nb** tail\nother\n",
+  "ops": [
+    {"type":"selection","start":2,"end":2}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":2,"end":5,"utf16Start":2,"utf16End":5},"kinds":["strong"],"concealed":false},
+      {"range":{"start":5,"end":7,"utf16Start":5,"utf16End":7},"kinds":["marker"],"concealed":false},
+      {"range":{"start":7,"end":19,"utf16Start":7,"utf16End":19},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "**a\nb** tail\nother\n",
+    "lenBytes": 19,
+    "lenUtf16": 19
+  }
+}

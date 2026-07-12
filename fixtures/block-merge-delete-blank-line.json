@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "name": "block-merge-delete-blank-line",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "# one\n\ntwo\n",
+  "ops": [
+    {"type":"edit","start":6,"end":7,"insert":""}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[{"start":6,"end":10,"utf16Start":6,"utf16End":10}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":2,"end":6,"utf16Start":2,"utf16End":6},"kinds":["heading1"],"concealed":false},
+      {"range":{"start":6,"end":10,"utf16Start":6,"utf16End":10},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "# one\ntwo\n",
+    "lenBytes": 10,
+    "lenUtf16": 10
+  }
+}

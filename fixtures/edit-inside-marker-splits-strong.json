@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "edit-inside-marker-splits-strong",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "**bold** text\n",
+  "ops": [
+    {"type":"edit","start":1,"end":1,"insert":"x"}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[{"start":0,"end":15,"utf16Start":0,"utf16End":15}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":1,"utf16Start":0,"utf16End":1},"kinds":["marker"],"concealed":false},
+      {"range":{"start":1,"end":2,"utf16Start":1,"utf16End":2},"kinds":["emphasis"],"concealed":false},
+      {"range":{"start":2,"end":3,"utf16Start":2,"utf16End":3},"kinds":["marker"],"concealed":false},
+      {"range":{"start":3,"end":15,"utf16Start":3,"utf16End":15},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "*x*bold** text\n",
+    "lenBytes": 15,
+    "lenUtf16": 15
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "name": "conceal-away-from-caret",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "plain\n# **word**\n> quote `code`\n",
+  "ops": [
+    {"type":"selection","start":0,"end":0}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":6,"utf16Start":0,"utf16End":6},"kinds":["body"],"concealed":false},
+      {"range":{"start":6,"end":8,"utf16Start":6,"utf16End":8},"kinds":["marker"],"concealed":true},
+      {"range":{"start":8,"end":10,"utf16Start":8,"utf16End":10},"kinds":["heading1","marker"],"concealed":true},
+      {"range":{"start":10,"end":14,"utf16Start":10,"utf16End":14},"kinds":["heading1","strong"],"concealed":false},
+      {"range":{"start":14,"end":16,"utf16Start":14,"utf16End":16},"kinds":["heading1","marker"],"concealed":true},
+      {"range":{"start":16,"end":17,"utf16Start":16,"utf16End":17},"kinds":["heading1"],"concealed":false},
+      {"range":{"start":17,"end":19,"utf16Start":17,"utf16End":19},"kinds":["marker"],"concealed":true},
+      {"range":{"start":19,"end":25,"utf16Start":19,"utf16End":25},"kinds":["blockquote"],"concealed":false},
+      {"range":{"start":25,"end":26,"utf16Start":25,"utf16End":26},"kinds":["blockquote","marker"],"concealed":true},
+      {"range":{"start":26,"end":30,"utf16Start":26,"utf16End":30},"kinds":["code_span","blockquote"],"concealed":false},
+      {"range":{"start":30,"end":31,"utf16Start":30,"utf16End":31},"kinds":["blockquote","marker"],"concealed":true},
+      {"range":{"start":31,"end":32,"utf16Start":31,"utf16End":32},"kinds":["blockquote"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "plain\n# **word**\n> quote `code`\n",
+    "lenBytes": 32,
+    "lenUtf16": 32
+  }
+}

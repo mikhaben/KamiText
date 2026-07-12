@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "name": "cjk-heading-and-body",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "# 日本語の見出し\n本文です **強調** あり\n",
+  "ops": [
+    {"type":"selection","start":0,"end":0}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":2,"end":24,"utf16Start":2,"utf16End":10},"kinds":["heading1"],"concealed":false},
+      {"range":{"start":24,"end":37,"utf16Start":10,"utf16End":15},"kinds":["body"],"concealed":false},
+      {"range":{"start":37,"end":39,"utf16Start":15,"utf16End":17},"kinds":["marker"],"concealed":true},
+      {"range":{"start":39,"end":45,"utf16Start":17,"utf16End":19},"kinds":["strong"],"concealed":false},
+      {"range":{"start":45,"end":47,"utf16Start":19,"utf16End":21},"kinds":["marker"],"concealed":true},
+      {"range":{"start":47,"end":55,"utf16Start":21,"utf16End":25},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "# 日本語の見出し\n本文です **強調** あり\n",
+    "lenBytes": 55,
+    "lenUtf16": 25
+  }
+}

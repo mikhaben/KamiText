@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "block-split-typing-fence-above",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "\nplain paragraph\n",
+  "ops": [
+    {"type":"edit","start":0,"end":0,"insert":"```"}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[{"start":0,"end":20,"utf16Start":0,"utf16End":20}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":3,"utf16Start":0,"utf16End":3},"kinds":["marker"],"concealed":false},
+      {"range":{"start":3,"end":20,"utf16Start":3,"utf16End":20},"kinds":["code_block"],"concealed":false}
+    ],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":20,"utf16Start":0,"utf16End":20},"kind":"fence","info":{"start":3,"end":3,"utf16Start":3,"utf16End":3}}
+    ],
+    "text": "```\nplain paragraph\n",
+    "lenBytes": 20,
+    "lenUtf16": 20
+  }
+}

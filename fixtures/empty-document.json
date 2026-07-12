@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "empty-document",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "",
+  "ops": [],
+  "expect": {
+    "patches": [],
+    "segments": [],
+    "elements": [],
+    "text": "",
+    "lenBytes": 0,
+    "lenUtf16": 0
+  }
+}

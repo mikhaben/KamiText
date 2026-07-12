@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "name": "element-reveal-nested",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "element"},
+  "text": "# **word** extra\n",
+  "ops": [
+    {"type":"selection","start":12,"end":12}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":2,"end":4,"utf16Start":2,"utf16End":4},"kinds":["heading1","marker"],"concealed":true},
+      {"range":{"start":4,"end":8,"utf16Start":4,"utf16End":8},"kinds":["heading1","strong"],"concealed":false},
+      {"range":{"start":8,"end":10,"utf16Start":8,"utf16End":10},"kinds":["heading1","marker"],"concealed":true},
+      {"range":{"start":10,"end":17,"utf16Start":10,"utf16End":17},"kinds":["heading1"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "# **word** extra\n",
+    "lenBytes": 17,
+    "lenUtf16": 17
+  }
+}

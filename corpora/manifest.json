@@ -1,0 +1,117 @@
+{
+  "comment": "Real-markdown regression corpus (spec kami-v0.3-hardening §7). markerDensity = bytes covered by MARKER-kind segments ÷ total bytes, measured with the engine (default options). Entries marked structured:synthetic carry real prose with mechanically added markdown scaffolding. This manifest is documentation and the licensing record; tests iterate corpora/*.md directly and never parse this file.",
+  "documents": [
+    {
+      "file": "rust-book-en-ownership.md",
+      "source": "https://github.com/rust-lang/book (src/ch04-01-what-is-ownership.md)",
+      "license": "MIT OR Apache-2.0",
+      "bytes": 25352,
+      "markerBytes": 625,
+      "markerDensity": 0.0247,
+      "scripts": ["Latin"],
+      "notes": "prose + fenced code blocks; typical technical-writing density"
+    },
+    {
+      "file": "rust-book-ja-ownership.md",
+      "source": "https://github.com/rust-lang-ja/book-ja (src/ch04-01-what-is-ownership.md)",
+      "license": "MIT OR Apache-2.0",
+      "bytes": 55023,
+      "markerBytes": 591,
+      "markerDensity": 0.0107,
+      "scripts": ["Japanese", "Latin"],
+      "notes": "CJK multi-byte prose surrounding the same code blocks; UTF-16 width stress"
+    },
+    {
+      "file": "rust-book-zh-ownership.md",
+      "source": "https://github.com/KaiserY/trpl-zh-cn (src/ch04-01-what-is-ownership.md)",
+      "license": "MIT",
+      "bytes": 23429,
+      "markerBytes": 737,
+      "markerDensity": 0.0315,
+      "scripts": ["Chinese", "Latin"],
+      "notes": "simplified-Chinese prose; markers directly abutting CJK"
+    },
+    {
+      "file": "rust-book-ko-ownership.md",
+      "source": "https://github.com/rust-kr/doc.rust-kr.org (src/ch04-01-what-is-ownership.md)",
+      "license": "MIT OR Apache-2.0",
+      "bytes": 29232,
+      "markerBytes": 607,
+      "markerDensity": 0.0208,
+      "scripts": ["Hangul", "Latin"],
+      "notes": "Hangul syllable blocks (3-byte UTF-8, 1 UTF-16 unit) against markers"
+    },
+    {
+      "file": "rust-book-en-appendix-operators.md",
+      "source": "https://github.com/rust-lang/book (src/appendix-02-operators.md)",
+      "license": "MIT OR Apache-2.0",
+      "bytes": 22595,
+      "markerBytes": 517,
+      "markerDensity": 0.0229,
+      "scripts": ["Latin"],
+      "notes": "reference tables full of literal `*`/`&`/`|` inside code spans — delimiter-lookalike stress"
+    },
+    {
+      "file": "public-apis.md",
+      "source": "https://github.com/public-apis/public-apis (README.md)",
+      "license": "MIT",
+      "bytes": 219070,
+      "markerBytes": 68927,
+      "markerDensity": 0.3146,
+      "scripts": ["Latin"],
+      "notes": "the ≥200 KB entry; hundreds of tables and links"
+    },
+    {
+      "file": "emoji-cheat-sheet.md",
+      "source": "https://github.com/ikatyang/emoji-cheat-sheet (README.md)",
+      "license": "MIT",
+      "bytes": 121575,
+      "markerBytes": 41590,
+      "markerDensity": 0.3421,
+      "scripts": ["Latin"],
+      "notes": "machine-generated colon-code tables; extreme code-span + anchor-link density (no literal emoji — see emoji-zwj-stress.md)"
+    },
+    {
+      "file": "awesome.md",
+      "source": "https://github.com/sindresorhus/awesome (readme.md)",
+      "license": "CC0-1.0",
+      "bytes": 79614,
+      "markerBytes": 39945,
+      "markerDensity": 0.5017,
+      "scripts": ["Latin"],
+      "notes": "densest real doc in the corpus (half of every byte is a marker); nested link lists"
+    },
+    {
+      "file": "fpb-langs.md",
+      "source": "https://github.com/EbookFoundation/free-programming-books (books/free-programming-books-langs.md)",
+      "license": "CC-BY-4.0 (attribution: © Ebook Foundation and free-programming-books contributors)",
+      "bytes": 198533,
+      "markerBytes": 98380,
+      "markerDensity": 0.4955,
+      "scripts": ["Latin", "Cyrillic", "CJK", "Arabic", "Devanagari", "mixed"],
+      "notes": "the worst-real-corpus bench doc (max markerBytes); deep heading/list nesting; multilingual titles mid-list"
+    },
+    {
+      "file": "ar-albukhala-structured.md",
+      "source": "Al-Bukhala, al-Jahiz (d. 869 CE) — public-domain classical Arabic prose; text via the pretext corpus (github.com/chenglou/pretext)",
+      "license": "public domain (prose); scaffolding MIT (this repo)",
+      "structured": "synthetic",
+      "bytes": 45026,
+      "markerBytes": 509,
+      "markerDensity": 0.0113,
+      "scripts": ["Arabic"],
+      "notes": "RTL coverage; real Arabic prose, mechanically added headings/quotes/nested lists (≥4-level nesting probe); no real permissive Arabic markdown was found"
+    },
+    {
+      "file": "emoji-zwj-stress.md",
+      "source": "authored for this repo",
+      "license": "MIT (this repo)",
+      "structured": "synthetic",
+      "bytes": 2825,
+      "markerBytes": 123,
+      "markerDensity": 0.0435,
+      "scripts": ["emoji", "Devanagari", "Thai"],
+      "notes": "ZWJ families, skin tones, tag-sequence flags, keycaps, VS16 — every class placed flush against delimiters; 4-level list nesting. Deliberately excludes a keycap whose base char doubles as a delimiter, and VS15 text-presentation forms (both are confirmed AppKit divergences — PLATFORM_BUGS.md #4)"
+    }
+  ]
+}

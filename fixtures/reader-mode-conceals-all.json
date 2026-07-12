@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "reader-mode-conceals-all",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "none"},
+  "text": "# h **b**\n- [ ] t\n",
+  "ops": [
+    {"type":"selection","start":3,"end":3}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":true},
+      {"range":{"start":2,"end":4,"utf16Start":2,"utf16End":4},"kinds":["heading1"],"concealed":false},
+      {"range":{"start":4,"end":6,"utf16Start":4,"utf16End":6},"kinds":["heading1","marker"],"concealed":true},
+      {"range":{"start":6,"end":7,"utf16Start":6,"utf16End":7},"kinds":["heading1","strong"],"concealed":false},
+      {"range":{"start":7,"end":9,"utf16Start":7,"utf16End":9},"kinds":["heading1","marker"],"concealed":true},
+      {"range":{"start":9,"end":10,"utf16Start":9,"utf16End":10},"kinds":["heading1"],"concealed":false},
+      {"range":{"start":10,"end":16,"utf16Start":10,"utf16End":16},"kinds":["task_marker"],"concealed":true},
+      {"range":{"start":16,"end":18,"utf16Start":16,"utf16End":18},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [
+      {"id":0,"range":{"start":10,"end":18,"utf16Start":10,"utf16End":18},"kind":"task","checked":false}
+    ],
+    "text": "# h **b**\n- [ ] t\n",
+    "lenBytes": 18,
+    "lenUtf16": 18
+  }
+}

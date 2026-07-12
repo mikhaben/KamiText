@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "name": "no-trailing-newline",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "**strong** end",
+  "ops": [],
+  "expect": {
+    "patches": [],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":2,"end":8,"utf16Start":2,"utf16End":8},"kinds":["strong"],"concealed":false},
+      {"range":{"start":8,"end":10,"utf16Start":8,"utf16End":10},"kinds":["marker"],"concealed":false},
+      {"range":{"start":10,"end":14,"utf16Start":10,"utf16End":14},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "**strong** end",
+    "lenBytes": 14,
+    "lenUtf16": 14
+  }
+}

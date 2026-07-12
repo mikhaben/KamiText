@@ -1,0 +1,28 @@
+[package]
+name = "kamitext"
+version = "0.1.0"
+edition = "2024"
+description = "Portable Markdown editor engine: styling, concealment and typing decisions for hidden-syntax live editing. No rendering."
+license = "MIT"
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false }
+bitflags = "2"
+
+[dev-dependencies]
+proptest = "1"
+criterion = "0.5"
+
+[[bench]]
+name = "keystroke"
+harness = false
+
+[[bench]]
+name = "selection_move"
+harness = false
+
+[profile.release]
+lto = true

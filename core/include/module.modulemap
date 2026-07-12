@@ -1,0 +1,4 @@
+module KamiCore {
+    header "kami_core.h"
+    export *
+}

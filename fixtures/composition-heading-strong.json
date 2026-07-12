@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "name": "composition-heading-strong",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "# **word**",
+  "ops": [],
+  "expect": {
+    "patches": [],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":2,"end":4,"utf16Start":2,"utf16End":4},"kinds":["heading1","marker"],"concealed":false},
+      {"range":{"start":4,"end":8,"utf16Start":4,"utf16End":8},"kinds":["heading1","strong"],"concealed":false},
+      {"range":{"start":8,"end":10,"utf16Start":8,"utf16End":10},"kinds":["heading1","marker"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "# **word**",
+    "lenBytes": 10,
+    "lenUtf16": 10
+  }
+}

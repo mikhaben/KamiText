@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "name": "nested-emphasis-triple",
+  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "text": "***x*** and **_y_**\n",
+  "ops": [
+    {"type":"selection","start":20,"end":20}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[{"start":0,"end":3,"utf16Start":0,"utf16End":3},{"start":4,"end":7,"utf16Start":4,"utf16End":7},{"start":12,"end":15,"utf16Start":12,"utf16End":15},{"start":16,"end":19,"utf16Start":16,"utf16End":19}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":1,"utf16Start":0,"utf16End":1},"kinds":["marker"],"concealed":true},
+      {"range":{"start":1,"end":3,"utf16Start":1,"utf16End":3},"kinds":["emphasis","marker"],"concealed":true},
+      {"range":{"start":3,"end":4,"utf16Start":3,"utf16End":4},"kinds":["strong","emphasis"],"concealed":false},
+      {"range":{"start":4,"end":6,"utf16Start":4,"utf16End":6},"kinds":["emphasis","marker"],"concealed":true},
+      {"range":{"start":6,"end":7,"utf16Start":6,"utf16End":7},"kinds":["marker"],"concealed":true},
+      {"range":{"start":7,"end":12,"utf16Start":7,"utf16End":12},"kinds":["body"],"concealed":false},
+      {"range":{"start":12,"end":14,"utf16Start":12,"utf16End":14},"kinds":["marker"],"concealed":true},
+      {"range":{"start":14,"end":15,"utf16Start":14,"utf16End":15},"kinds":["strong","marker"],"concealed":true},
+      {"range":{"start":15,"end":16,"utf16Start":15,"utf16End":16},"kinds":["strong","emphasis"],"concealed":false},
+      {"range":{"start":16,"end":17,"utf16Start":16,"utf16End":17},"kinds":["strong","marker"],"concealed":true},
+      {"range":{"start":17,"end":19,"utf16Start":17,"utf16End":19},"kinds":["marker"],"concealed":true},
+      {"range":{"start":19,"end":20,"utf16Start":19,"utf16End":20},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [],
+    "text": "***x*** and **_y_**\n",
+    "lenBytes": 20,
+    "lenUtf16": 20
+  }
+}
