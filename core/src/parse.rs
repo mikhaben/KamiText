@@ -599,7 +599,17 @@ fn list_item(text: &str, frame: &Frame, out: &mut ParseOut) {
         if (m_end as usize) < text.len() && bytes[m_end as usize] == b' ' {
             m_end += 1;
         }
-        push_marker(out, ByteRange::new(r.start, m_end), Kind::TASK_MARKER, r, MarkerScope::Block);
+        // Reveal owner is the marker's own span, not the item `r`. A list item
+        // swallows lazy-continuation lines (CommonMark 5.2 — a following
+        // unindented paragraph line joins the item), so `r` reaches lines the
+        // marker doesn't sit on, and a caret parked on one of them would hold
+        // the `- [ ]` revealed. `Block` scope means "conceal per the line the
+        // marker sits on"; the marker never spans lines, so its own range is a
+        // faithful stand-in for that line against the whole-line reveal region.
+        // Fenced blocks deliberately differ (owner = the whole block) so their
+        // fences and info string stay legible while the caret is inside.
+        let marker = ByteRange::new(r.start, m_end);
+        push_marker(out, marker, Kind::TASK_MARKER, marker, MarkerScope::Block);
         out.task_boxes.push(TaskBox {
             item: r,
             boxx,

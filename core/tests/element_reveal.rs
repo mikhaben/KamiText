@@ -98,6 +98,36 @@ fn block_markers_stay_line_scoped_inside_element_mode() {
     assert!(concealed_at(&e, 19), "task marker must stay concealed: different line");
 }
 
+#[test]
+fn task_marker_conceals_on_a_lazy_continuation_line() {
+    // A list item swallows the following unindented line (CommonMark 5.2
+    // lazy continuation), so the item's range covers a line the `- [ ]`
+    // doesn't sit on. Block markers conceal per the line they sit on, so a
+    // caret down on the continuation must NOT hold the marker revealed.
+    let text = "- [ ] some text\nsome new line here\n";
+    let mut e = engine(text);
+
+    e.set_selection(ByteRange::new(8, 8)).unwrap(); // line 1, inside "some text"
+    assert!(!concealed_at(&e, 0), "task marker reveals: caret is on its line");
+
+    e.set_selection(ByteRange::new(20, 20)).unwrap(); // line 2, the lazy continuation
+    assert!(
+        concealed_at(&e, 0),
+        "task marker must conceal: caret is on a continuation line, not the marker's"
+    );
+}
+
+#[test]
+fn fence_markers_stay_revealed_from_inside_the_block() {
+    // The counterpart rule: fenced blocks own their whole range on purpose,
+    // so the fences and info string stay legible while editing inside them.
+    let text = "```rust\nlet x = 1;\n```\n";
+    let mut e = engine(text);
+    e.set_selection(ByteRange::new(12, 12)).unwrap(); // inside the code body
+    assert!(!concealed_at(&e, 0), "opening fence stays revealed from inside");
+    assert!(!concealed_at(&e, 19), "closing fence stays revealed from inside");
+}
+
 // ------------------------------------------------------------ nested scopes
 
 #[test]
