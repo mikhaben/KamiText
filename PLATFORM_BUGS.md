@@ -132,3 +132,7 @@ reading `viewportRange` itself forces no layout. Reference implementation:
 band-clamped `blockRects`). WWDC21 "Meet TextKit 2" warns against off-viewport
 layout reads; the exact UIKit fallback internal is inferred (closed source), but
 remove-the-forcing ⇒ bug gone was confirmed by two independent reviews.
+macOS/AppKit: the end-of-document jump was NOT reproduced (2026-07-16, KamiNotesMac,
+4 screenshot-backed unfocused-click attempts on a 600-line note) — the same synchronous
+focus reseed exists there (`EditorSession.setEditorFocused`) but AppKit's click→selection
+ordering appears to shield it. Watched, not deferred; see the mac repo's DESIGN.md ledger.
