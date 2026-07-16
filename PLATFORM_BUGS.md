@@ -114,3 +114,21 @@ path re-derives state from the current storage content. This is accepted behavio
 not a gap to close with more machinery — see `KamiTextSync.swift:25-28` before
 attempting a fix. Hosts wanting bulletproof coverage of this specific window can add
 the `NSTextStorageDelegate.didProcessEditing` hook the same doc comment prescribes.
+
+### TextKit 2: geometry queries outside the viewport degrade tap hit-testing (iOS)
+
+**Status**: Host-side hazard, worked around in hosts — not an engine bug. With
+`UITextView(usingTextLayoutManager: true)`, `UITextInput` geometry calls
+(`selectionRects(for:)`, `firstRect(for:)`, …) force layout of the queried range.
+TextKit 2 lays out viewport-locally; forcing layout for ranges far outside the
+viewport (e.g. measuring every fenced code block in a large document) destabilizes
+UITextView's tap mapping so `closestPosition(to:)` falls back to `endOfDocument` —
+observed on-device (2026-07-16, KamiNotes iOS: tapping mid-document placed the caret
+at the end of large notes). Small documents never reproduce it (fully laid out).
+Hosts drawing range-based decorations must clamp geometry work to
+`textLayoutManager.textViewportLayoutController.viewportRange` (+ a bounded margin);
+reading `viewportRange` itself forces no layout. Reference implementation:
+`KamiNotesIOS/Sources/Editor/CodeBlockDecoration.swift` (`visibleUTF16Range`,
+band-clamped `blockRects`). WWDC21 "Meet TextKit 2" warns against off-viewport
+layout reads; the exact UIKit fallback internal is inferred (closed source), but
+remove-the-forcing ⇒ bug gone was confirmed by two independent reviews.
