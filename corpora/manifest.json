@@ -112,6 +112,36 @@
       "markerDensity": 0.0435,
       "scripts": ["emoji", "Devanagari", "Thai"],
       "notes": "ZWJ families, skin tones, tag-sequence flags, keycaps, VS16 — every class placed flush against delimiters; 4-level list nesting. Deliberately excludes a keycap whose base char doubles as a delimiter, and VS15 text-presentation forms (both are confirmed AppKit divergences — PLATFORM_BUGS.md #4)"
+    },
+    {
+      "file": "rtl-mixed-scripts.md",
+      "source": "https://github.com/pluk-inc/markdown-preview (samples/rtl-test.md)",
+      "license": "MIT",
+      "bytes": 9576,
+      "markerBytes": 685,
+      "markerDensity": 0.0715,
+      "scripts": ["Thaana", "Arabic", "Hebrew", "Latin"],
+      "notes": "adds what ar-albukhala-structured.md (Arabic-only RTL) lacks: mixed-direction inline runs, Thaana, and Hebrew alongside Latin"
+    },
+    {
+      "file": "fence-language-variety.md",
+      "source": "https://github.com/pluk-inc/markdown-preview (samples/codeblocks.md)",
+      "license": "MIT",
+      "bytes": 960,
+      "markerBytes": 32,
+      "markerDensity": 0.0333,
+      "scripts": ["Latin"],
+      "notes": "fenced code blocks across varied info-string languages; markers are the fence delimiters"
+    },
+    {
+      "file": "footnotes-long.md",
+      "source": "https://github.com/pluk-inc/markdown-preview (samples/long-footnotes.md)",
+      "license": "MIT",
+      "bytes": 4283,
+      "markerBytes": 70,
+      "markerDensity": 0.0163,
+      "scripts": ["Latin"],
+      "notes": "long footnote definitions and references; low marker density prose"
     }
   ]
 }
