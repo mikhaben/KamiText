@@ -162,6 +162,10 @@ pub enum ElementKind {
     Image { src: ByteRange },
     Fence { info: ByteRange },
     WikiLink { target: ByteRange },
+    /// ATX (1–6) or setext (1–2) heading. `text` is the title content net of
+    /// markers and surrounding whitespace; the element range spans the whole
+    /// construct (setext: both lines).
+    Heading { level: u8, text: ByteRange },
 }
 
 /// An interactive semantic object. `id` is stable within a parse

@@ -15,7 +15,9 @@
       {"range":{"start":2,"end":6,"utf16Start":2,"utf16End":6},"kinds":["heading1"],"concealed":false},
       {"range":{"start":6,"end":10,"utf16Start":6,"utf16End":10},"kinds":["body"],"concealed":false}
     ],
-    "elements": [],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":6,"utf16Start":0,"utf16End":6},"kind":"heading","level":1,"text":{"start":2,"end":5,"utf16Start":2,"utf16End":5}}
+    ],
     "text": "# one\ntwo\n",
     "lenBytes": 10,
     "lenUtf16": 10

@@ -19,7 +19,7 @@
 #include <stdlib.h>
 
 // ABI version. Bumped on any breaking layout or semantic change.
-#define KAMI_ABI_VERSION 2
+#define KAMI_ABI_VERSION 3
 
 #define KAMI_OK 0
 
@@ -47,6 +47,8 @@
 #define KAMI_ELEMENT_FENCE 3
 
 #define KAMI_ELEMENT_WIKILINK 4
+
+#define KAMI_ELEMENT_HEADING 5
 
 // Opaque engine handle (Rustonomicon opaque-struct pattern). Only ever used
 // behind a pointer; cbindgen emits a bare forward declaration.
@@ -94,10 +96,11 @@ typedef struct KamiElement {
   uint32_t end;
   // KAMI_ELEMENT_* tag. Unknown tags must be ignored.
   uint32_t kind;
-  // Task: 1 = checked. Other kinds: 0.
+  // Task: 1 = checked. Heading: level 1–6. Other kinds: 0.
   uint8_t checked;
   uint8_t _pad[3];
-  // Link dest / image src / fence info byte range; 0-width when absent.
+  // Link dest / image src / fence info / wikilink target / heading text
+  // byte range; 0-width when absent.
   uint32_t aux_start;
   uint32_t aux_end;
 } KamiElement;

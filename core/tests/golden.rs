@@ -952,3 +952,94 @@ fn quoted_thematic_break_stays_raw() {
     top.set_selection(ByteRange::new(4, 4)).unwrap();
     assert!(segs(&top).iter().any(|s| s.contains("HR") && s.contains("conc")));
 }
+
+#[test]
+fn heading_elements_atx_setext_fenced() {
+    let src = "# One\n\nTitle\n=====\n\n## Two ##\n\n```\n# not a heading\n```\n";
+    let e = engine(src);
+    let heads: Vec<(u8, &str)> = e
+        .elements_in(ByteRange::new(0, src.len() as u32))
+        .iter()
+        .filter_map(|el| match el.kind {
+            ElementKind::Heading { level, text } => {
+                Some((level, &src[text.start as usize..text.end as usize]))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(heads, vec![(1, "One"), (1, "Title"), (2, "Two")]);
+}
+
+#[test]
+fn heading_element_empty_atx_has_zero_width_text() {
+    let src = "##\n";
+    let e = engine(src);
+    let els = e.elements_in(ByteRange::new(0, src.len() as u32));
+    let heading = els
+        .iter()
+        .find_map(|el| match el.kind {
+            ElementKind::Heading { level, text } => Some((level, text)),
+            _ => None,
+        })
+        .expect("empty ATX heading emits an element");
+    assert_eq!(heading.0, 2);
+    assert_eq!(heading.1.start, heading.1.end);
+}
+
+#[test]
+fn heading_element_title_trims_surrounding_whitespace() {
+    // The opening marker consumes one space; extra title padding is trimmed
+    // from the element's text range (the paint keeps it — display-only).
+    let src = "#   Spaced Title  \n";
+    let e = engine(src);
+    let heads: Vec<(u8, &str)> = e
+        .elements_in(ByteRange::new(0, src.len() as u32))
+        .iter()
+        .filter_map(|el| match el.kind {
+            ElementKind::Heading { level, text } => {
+                Some((level, &src[text.start as usize..text.end as usize]))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(heads, vec![(1, "Spaced Title")]);
+}
+
+#[test]
+fn heading_element_titles_are_crlf_safe() {
+    // CRLF documents: no stray `\r` in titles, a closing `#`-run is still
+    // recognized (and stripped) before the `\r`, and an empty `##\r\n` ATX
+    // heading stays ATX (zero-width title) instead of leaking "##\r".
+    let src = "# One\r\n\r\nTitle\r\n=====\r\n\r\n## Two ##\r\n\r\n##\r\n";
+    let e = engine(src);
+    let heads: Vec<(u8, &str)> = e
+        .elements_in(ByteRange::new(0, src.len() as u32))
+        .iter()
+        .filter_map(|el| match el.kind {
+            ElementKind::Heading { level, text } => {
+                Some((level, &src[text.start as usize..text.end as usize]))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(heads, vec![(1, "One"), (1, "Title"), (2, "Two"), (2, "")]);
+}
+
+#[test]
+fn heading_element_setext_in_blockquote_excludes_quote_prefix() {
+    // The underline line's `> ` prefix sits between the title and the marker
+    // run; it must not leak into the title range.
+    let src = "> Title\n> =====\n";
+    let e = engine(src);
+    let heads: Vec<(u8, &str)> = e
+        .elements_in(ByteRange::new(0, src.len() as u32))
+        .iter()
+        .filter_map(|el| match el.kind {
+            ElementKind::Heading { level, text } => {
+                Some((level, &src[text.start as usize..text.end as usize]))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(heads, vec![(1, "Title")]);
+}

@@ -24,7 +24,9 @@
       {"range":{"start":30,"end":31,"utf16Start":30,"utf16End":31},"kinds":["blockquote","marker"],"concealed":true},
       {"range":{"start":31,"end":32,"utf16Start":31,"utf16End":32},"kinds":["blockquote"],"concealed":false}
     ],
-    "elements": [],
+    "elements": [
+      {"id":0,"range":{"start":6,"end":17,"utf16Start":6,"utf16End":17},"kind":"heading","level":1,"text":{"start":8,"end":16,"utf16Start":8,"utf16End":16}}
+    ],
     "text": "plain\n# **word**\n> quote `code`\n",
     "lenBytes": 32,
     "lenUtf16": 32

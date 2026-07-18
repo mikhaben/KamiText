@@ -177,11 +177,15 @@ public final class KamiEngine {
     private func copyElements(_ raw: KamiCore.KamiElements) -> [KamiElement] {
         guard let ptr = raw.ptr, raw.len > 0 else { return [] }
         return UnsafeBufferPointer(start: ptr, count: raw.len).map { el in
-            KamiElement(
+            // The C `checked` byte is overloaded per kind: task checkedness or
+            // heading level. Decode by kind so neither leaks into the other.
+            let kind = KamiElementKind(rawValue: el.kind)
+            return KamiElement(
                 id: el.id,
                 range: el.start..<el.end,
-                kind: KamiElementKind(rawValue: el.kind),
-                checked: el.checked != 0,
+                kind: kind,
+                checked: kind == .task && el.checked != 0,
+                level: kind == .heading ? el.checked : 0,
                 auxRange: el.aux_start..<el.aux_end
             )
         }

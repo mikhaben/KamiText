@@ -17,7 +17,9 @@
       {"range":{"start":8,"end":10,"utf16Start":8,"utf16End":10},"kinds":["heading1","marker"],"concealed":true},
       {"range":{"start":10,"end":17,"utf16Start":10,"utf16End":17},"kinds":["heading1"],"concealed":false}
     ],
-    "elements": [],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":17,"utf16Start":0,"utf16End":17},"kind":"heading","level":1,"text":{"start":2,"end":16,"utf16Start":2,"utf16End":16}}
+    ],
     "text": "# **word** extra\n",
     "lenBytes": 17,
     "lenUtf16": 17

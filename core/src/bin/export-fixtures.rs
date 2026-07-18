@@ -470,6 +470,11 @@ fn export(f: &Fixture) -> String {
                 out.push_str(",\"kind\":\"wikilink\",\"target\":");
                 range_obj(&e, target, &mut out);
             }
+            ElementKind::Heading { level, text } => {
+                let _ = write!(out, ",\"kind\":\"heading\",\"level\":{level}");
+                out.push_str(",\"text\":");
+                range_obj(&e, text, &mut out);
+            }
         }
         out.push('}');
     }

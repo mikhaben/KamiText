@@ -18,7 +18,9 @@
       {"range":{"start":13,"end":16,"utf16Start":13,"utf16End":16},"kinds":["thematic_break","marker"],"concealed":true},
       {"range":{"start":16,"end":23,"utf16Start":16,"utf16End":23},"kinds":["body"],"concealed":false}
     ],
-    "elements": [],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":12,"utf16Start":0,"utf16End":12},"kind":"heading","level":1,"text":{"start":0,"end":5,"utf16Start":0,"utf16End":5}}
+    ],
     "text": "Title\n=====\n\n---\n\ntext\n",
     "lenBytes": 23,
     "lenUtf16": 23

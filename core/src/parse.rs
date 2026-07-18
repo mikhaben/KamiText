@@ -305,6 +305,7 @@ fn element_sort_key(e: &Element) -> u32 {
         ElementKind::Image { .. } => 2,
         ElementKind::Fence { .. } => 3,
         ElementKind::WikiLink { .. } => 4,
+        ElementKind::Heading { .. } => 5,
     }
 }
 
@@ -487,7 +488,8 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
     let is_atx = (1..=6).contains(&hashes)
         && (hash_end == content_line_end
             || bytes[hash_end as usize] == b' '
-            || bytes[hash_end as usize] == b'\t');
+            || bytes[hash_end as usize] == b'\t'
+            || bytes[hash_end as usize] == b'\r');
 
     if is_atx {
         // Opening marker: `#`-run plus one following space/tab.
@@ -498,7 +500,12 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
         own.push(ByteRange::new(r.start, m_end));
 
         // Optional closing sequence: spaces + `#`-run (+ trailing spaces) at EOL.
+        // A CRLF line ends in `\r` here (content_line_end stops at `\n`) —
+        // step past it or the closing run is never recognized.
         let mut e = content_line_end;
+        if e > m_end && bytes[e as usize - 1] == b'\r' {
+            e -= 1;
+        }
         while e > m_end && (bytes[e as usize - 1] == b' ' || bytes[e as usize - 1] == b'\t') {
             e -= 1;
         }
@@ -539,6 +546,46 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
         push_marker(out, *m, Kind::MARKER, r, MarkerScope::Block);
     }
     paint_minus(r, &own, Kind::heading(level), out);
+
+    let text_range = if is_atx {
+        let mut start = own.first().map_or(r.start, |m| m.end);
+        let mut end = own.get(1).map_or(content_line_end, |m| m.start);
+        while start < end && matches!(bytes[start as usize], b' ' | b'\t') {
+            start += 1;
+        }
+        while end > start && matches!(bytes[end as usize - 1], b' ' | b'\t' | b'\r') {
+            end -= 1;
+        }
+        ByteRange::new(start, end)
+    } else {
+        let mut end = own.first().map_or(r.end, |m| m.start);
+        // The underline line's own container prefix (e.g. `> `) sits between
+        // the last content byte and the marker run — it is not title text.
+        let mut nl = end;
+        while nl > r.start && bytes[nl as usize - 1] != b'\n' {
+            nl -= 1;
+        }
+        if nl > r.start
+            && bytes[nl as usize..end as usize]
+                .iter()
+                .all(|&b| matches!(b, b'>' | b' ' | b'\t'))
+        {
+            end = nl;
+        }
+        let mut start = r.start;
+        while start < end && matches!(bytes[start as usize], b' ' | b'\t') {
+            start += 1;
+        }
+        while end > start && matches!(bytes[end as usize - 1], b'\n' | b'\r' | b' ' | b'\t') {
+            end -= 1;
+        }
+        ByteRange::new(start, end)
+    };
+    out.elements.push(Element {
+        id: 0, // reassigned in document order
+        range: r,
+        kind: ElementKind::Heading { level, text: text_range },
+    });
 }
 
 fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {

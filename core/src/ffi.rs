@@ -30,7 +30,7 @@ use crate::types::{
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// ABI version. Bumped on any breaking layout or semantic change.
-pub const KAMI_ABI_VERSION: u32 = 2;
+pub const KAMI_ABI_VERSION: u32 = 3;
 
 pub const KAMI_OK: i32 = 0;
 /// Out-of-bounds, reversed or scalar-splitting range on a mutating call.
@@ -86,6 +86,7 @@ pub const KAMI_ELEMENT_LINK: u32 = 1;
 pub const KAMI_ELEMENT_IMAGE: u32 = 2;
 pub const KAMI_ELEMENT_FENCE: u32 = 3;
 pub const KAMI_ELEMENT_WIKILINK: u32 = 4;
+pub const KAMI_ELEMENT_HEADING: u32 = 5;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -95,10 +96,11 @@ pub struct KamiElement {
     pub end: u32,
     /// KAMI_ELEMENT_* tag. Unknown tags must be ignored.
     pub kind: u32,
-    /// Task: 1 = checked. Other kinds: 0.
+    /// Task: 1 = checked. Heading: level 1–6. Other kinds: 0.
     pub checked: u8,
     pub _pad: [u8; 3],
-    /// Link dest / image src / fence info byte range; 0-width when absent.
+    /// Link dest / image src / fence info / wikilink target / heading text
+    /// byte range; 0-width when absent.
     pub aux_start: u32,
     pub aux_end: u32,
 }
@@ -490,6 +492,7 @@ pub unsafe extern "C" fn kami_elements_in(
                     ElementKind::Image { src } => (KAMI_ELEMENT_IMAGE, 0, src),
                     ElementKind::Fence { info } => (KAMI_ELEMENT_FENCE, 0, info),
                     ElementKind::WikiLink { target } => (KAMI_ELEMENT_WIKILINK, 0, target),
+                    ElementKind::Heading { level, text } => (KAMI_ELEMENT_HEADING, level, text),
                 };
                 KamiElement {
                     id: e.id,

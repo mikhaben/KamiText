@@ -12,7 +12,9 @@
       {"range":{"start":4,"end":8,"utf16Start":4,"utf16End":8},"kinds":["heading1","strong"],"concealed":false},
       {"range":{"start":8,"end":10,"utf16Start":8,"utf16End":10},"kinds":["heading1","marker"],"concealed":false}
     ],
-    "elements": [],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":10,"utf16Start":0,"utf16End":10},"kind":"heading","level":1,"text":{"start":2,"end":10,"utf16Start":2,"utf16End":10}}
+    ],
     "text": "# **word**",
     "lenBytes": 10,
     "lenUtf16": 10

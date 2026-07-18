@@ -68,10 +68,12 @@ public enum KamiElementKind: UInt32, Sendable, Equatable {
     case image = 2
     case fence = 3
     case wikilink = 4
+    case heading = 5
 }
 
 /// A semantic object an adapter may want to make interactive: task checkbox,
-/// link, image, fence, or wikilink.
+/// link, image, fence, wikilink, or heading (whose `auxRange` is the source
+/// title range and `level` carries 1–6).
 ///
 /// `kind` is `nil` when the C ABI's tag isn't one of the known cases —
 /// adapters must ignore elements they don't recognize rather than guess, so
@@ -81,6 +83,8 @@ public struct KamiElement: Sendable, Equatable {
     public let range: Range<UInt32>
     public let kind: KamiElementKind?
     public let checked: Bool
+    /// Heading level 1–6 (the C 'checked' byte); 0 for non-headings.
+    public let level: UInt8
     public let auxRange: Range<UInt32>
 }
 

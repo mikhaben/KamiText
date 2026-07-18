@@ -19,7 +19,8 @@
       {"range":{"start":24,"end":29,"utf16Start":24,"utf16End":29},"kinds":["body"],"concealed":false}
     ],
     "elements": [
-      {"id":0,"range":{"start":18,"end":29,"utf16Start":18,"utf16End":29},"kind":"task","checked":false}
+      {"id":0,"range":{"start":0,"end":10,"utf16Start":0,"utf16End":10},"kind":"heading","level":1,"text":{"start":2,"end":9,"utf16Start":2,"utf16End":9}},
+      {"id":1,"range":{"start":18,"end":29,"utf16Start":18,"utf16End":29},"kind":"task","checked":false}
     ],
     "text": "# heading\n> quote\n- [ ] task\n",
     "lenBytes": 29,
