@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "name": "wikilinks",
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
+  "text": "[[Note]] and [[target|alias]]\ntail\n",
+  "ops": [
+    {"type":"selection","start":35,"end":35}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[{"start":0,"end":2,"utf16Start":0,"utf16End":2},{"start":6,"end":8,"utf16Start":6,"utf16End":8},{"start":13,"end":22,"utf16Start":13,"utf16End":22},{"start":27,"end":29,"utf16Start":27,"utf16End":29}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":true},
+      {"range":{"start":2,"end":6,"utf16Start":2,"utf16End":6},"kinds":["link"],"concealed":false},
+      {"range":{"start":6,"end":8,"utf16Start":6,"utf16End":8},"kinds":["marker"],"concealed":true},
+      {"range":{"start":8,"end":13,"utf16Start":8,"utf16End":13},"kinds":["body"],"concealed":false},
+      {"range":{"start":13,"end":22,"utf16Start":13,"utf16End":22},"kinds":["marker"],"concealed":true},
+      {"range":{"start":22,"end":27,"utf16Start":22,"utf16End":27},"kinds":["link"],"concealed":false},
+      {"range":{"start":27,"end":29,"utf16Start":27,"utf16End":29},"kinds":["marker"],"concealed":true},
+      {"range":{"start":29,"end":35,"utf16Start":29,"utf16End":35},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":8,"utf16Start":0,"utf16End":8},"kind":"wikilink","target":{"start":2,"end":6,"utf16Start":2,"utf16End":6}},
+      {"id":1,"range":{"start":13,"end":29,"utf16Start":13,"utf16End":29},"kind":"wikilink","target":{"start":15,"end":21,"utf16Start":15,"utf16End":21}}
+    ],
+    "text": "[[Note]] and [[target|alias]]\ntail\n",
+    "lenBytes": 35,
+    "lenUtf16": 35
+  }
+}

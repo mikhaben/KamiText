@@ -19,7 +19,7 @@
 #include <stdlib.h>
 
 // ABI version. Bumped on any breaking layout or semantic change.
-#define KAMI_ABI_VERSION 1
+#define KAMI_ABI_VERSION 2
 
 #define KAMI_OK 0
 
@@ -46,12 +46,14 @@
 
 #define KAMI_ELEMENT_FENCE 3
 
+#define KAMI_ELEMENT_WIKILINK 4
+
 // Opaque engine handle (Rustonomicon opaque-struct pattern). Only ever used
 // behind a pointer; cbindgen emits a bare forward declaration.
 typedef struct KamiEngine KamiEngine;
 
 typedef struct KamiOptions {
-  // Bitflags: 1 = tables, 2 = task lists, 4 = strikethrough.
+  // Bitflags: 1 = tables, 2 = task lists, 4 = strikethrough, 8 = wikilinks.
   uint32_t extensions;
   // 0 = none (reader), 1 = line (default), 2 = block, 3 = element.
   uint32_t reveal;

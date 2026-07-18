@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "conceal-away-from-caret",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "plain\n# **word**\n> quote `code`\n",
   "ops": [
     {"type":"selection","start":0,"end":0}
@@ -17,7 +17,7 @@
       {"range":{"start":10,"end":14,"utf16Start":10,"utf16End":14},"kinds":["heading1","strong"],"concealed":false},
       {"range":{"start":14,"end":16,"utf16Start":14,"utf16End":16},"kinds":["heading1","marker"],"concealed":true},
       {"range":{"start":16,"end":17,"utf16Start":16,"utf16End":17},"kinds":["heading1"],"concealed":false},
-      {"range":{"start":17,"end":19,"utf16Start":17,"utf16End":19},"kinds":["marker"],"concealed":true},
+      {"range":{"start":17,"end":19,"utf16Start":17,"utf16End":19},"kinds":["blockquote","marker"],"concealed":true},
       {"range":{"start":19,"end":25,"utf16Start":19,"utf16End":25},"kinds":["blockquote"],"concealed":false},
       {"range":{"start":25,"end":26,"utf16Start":25,"utf16End":26},"kinds":["blockquote","marker"],"concealed":true},
       {"range":{"start":26,"end":30,"utf16Start":26,"utf16End":30},"kinds":["code_span","blockquote"],"concealed":false},

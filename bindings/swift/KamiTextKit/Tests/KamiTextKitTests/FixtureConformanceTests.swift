@@ -2,14 +2,15 @@ import Foundation
 import Testing
 @testable import KamiTextKit
 
-/// Gate 2: replays the 3 required conformance fixtures through `KamiEngine`
+/// Gate 2: replays EVERY committed conformance fixture through `KamiEngine`
 /// and asserts the resulting segments match `expect.segments` element-for-
 /// element (byte range, UTF-16 range, kind set, concealed). Fixture files
 /// live at `<repo>/fixtures/`, resolved relative to this source file so the
-/// tests run from any checkout location.
+/// tests run from any checkout location. The list is discovered from the
+/// directory — a committed fixture that isn't replayed cannot exist.
 @MainActor
 struct FixtureConformanceTests {
-    private static let fixturesDirectory = URL(fileURLWithPath: #filePath)
+    private nonisolated static let fixturesDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent() // KamiTextKitTests
         .deletingLastPathComponent() // Tests
         .deletingLastPathComponent() // KamiTextKit
@@ -19,56 +20,20 @@ struct FixtureConformanceTests {
         .appendingPathComponent("fixtures")
         .path
 
-    @Test func compositionHeadingStrong() throws {
-        try runFixture(named: "composition-heading-strong")
-    }
+    /// Every `*.json` in `fixtures/`, sorted for stable test identity.
+    /// `nonisolated`: `@Test(arguments:)` evaluates off the main actor.
+    private nonisolated static let allFixtureNames: [String] = {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: fixturesDirectory))?
+            .filter { $0.hasSuffix(".json") }
+            .map { String($0.dropLast(".json".count)) }
+            .sorted() ?? []
+        precondition(!names.isEmpty, "no fixtures found at \(fixturesDirectory)")
+        return names
+    }()
 
-    @Test func emojiAstralMidMarker() throws {
-        try runFixture(named: "emoji-astral-mid-marker")
-    }
-
-    @Test func concealAwayFromCaret() throws {
-        try runFixture(named: "conceal-away-from-caret")
-    }
-
-    @Test func elementRevealInlineCaretInside() throws {
-        try runFixture(named: "element-reveal-inline-caret-inside")
-    }
-
-    @Test func elementRevealInlineCaretOutside() throws {
-        try runFixture(named: "element-reveal-inline-caret-outside")
-    }
-
-    @Test func elementRevealBoundaryStart() throws {
-        try runFixture(named: "element-reveal-boundary-start")
-    }
-
-    @Test func elementRevealBoundaryEnd() throws {
-        try runFixture(named: "element-reveal-boundary-end")
-    }
-
-    @Test func elementRevealAdjacentElements() throws {
-        try runFixture(named: "element-reveal-adjacent-elements")
-    }
-
-    @Test func elementRevealBlockMarkers() throws {
-        try runFixture(named: "element-reveal-block-markers")
-    }
-
-    @Test func elementRevealSelectionSpan() throws {
-        try runFixture(named: "element-reveal-selection-span")
-    }
-
-    @Test func elementRevealSelectionEndpoint() throws {
-        try runFixture(named: "element-reveal-selection-endpoint")
-    }
-
-    @Test func elementRevealNested() throws {
-        try runFixture(named: "element-reveal-nested")
-    }
-
-    @Test func elementRevealMultilineSpan() throws {
-        try runFixture(named: "element-reveal-multiline-span")
+    @Test(arguments: allFixtureNames)
+    func replays(fixture name: String) throws {
+        try runFixture(named: name)
     }
 
     private func runFixture(named name: String) throws {
@@ -81,6 +46,7 @@ struct FixtureConformanceTests {
             case "tables": result.insert(.tables)
             case "task_lists": result.insert(.taskLists)
             case "strikethrough": result.insert(.strikethrough)
+            case "wikilinks": result.insert(.wikilinks)
             default: break
             }
         }
@@ -102,7 +68,11 @@ struct FixtureConformanceTests {
             case let .edit(start, end, insert):
                 _ = try engine.applyEdit(start..<end, replacement: insert)
             case let .selection(start, end):
-                _ = try engine.setSelection(start..<end)
+                // The Swift API can't express a reversed selection (`Range`
+                // enforces order) — hosts hand it NSRanges, never reversed.
+                // The engine normalizes either way (covered by the Rust
+                // suite), so replay the normalized form.
+                _ = try engine.setSelection(min(start, end)..<max(start, end))
             }
         }
 

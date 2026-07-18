@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "reader-mode-conceals-all",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "none"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "none"},
   "text": "# h **b**\n- [ ] t\n",
   "ops": [
     {"type":"selection","start":3,"end":3}

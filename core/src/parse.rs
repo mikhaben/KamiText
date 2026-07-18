@@ -10,13 +10,16 @@
 //!   heading ranges include the trailing newline, blockquote `>` prefixes
 //!   repeat per line, fences carry an info string).
 //!
-//! Composition rule: a node's own delimiters carry the
-//! *enclosing* kinds plus `MARKER`, never the node's own kind. This falls out
-//! naturally: each node paints its kind over (own range minus own markers),
-//! and markers are separate paints unioned during flattening.
+//! Composition rule: an *inline* node's delimiters carry the *enclosing*
+//! kinds plus `MARKER`, never the node's own kind — each node paints its kind
+//! over (own range minus own markers), and markers are separate paints
+//! unioned during flattening. Three block constructs deliberately break this
+//! and union their own kind onto the marker (blockquote `>` prefixes, table
+//! source, thematic breaks): their hosts key block decorations off the
+//! marker's kind bits.
 
 use crate::types::{ByteRange, Element, ElementKind, Extensions, Kind, MarkerScope};
-use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag};
 
 /// A content-kind paint: adds `kind` to every byte in `range`. Never concealed.
 #[derive(Debug, Clone, Copy)]
@@ -86,6 +89,7 @@ enum NodeKind {
     Strong,
     Strikethrough,
     Link,
+    WikiLink { has_pothole: bool },
     Image,
     Table,
     HtmlBlock,
@@ -101,16 +105,31 @@ struct Frame {
     last_child_end: u32,
     /// Number of enclosing blockquotes (for per-line `>` prefix skipping).
     quote_depth: u32,
+    /// Inside a table: inline markers/elements are suppressed there — markers
+    /// must be disjoint, and the whole-table Block marker owns conceal, so a
+    /// revealed table shows its full raw source.
+    in_table: bool,
     /// Task box captured from a TaskListMarker event (items only).
     task: Option<(ByteRange, bool)>,
 }
 
 impl Frame {
+    /// Span of direct children, clamped to the node's own range. pulldown
+    /// 0.13's empty-alias wikilink (`[[a|]]` + trailing inline) re-emits the
+    /// paragraph's trailing events inside the still-open link, inflating
+    /// `last_child_end` past the node's end — unclamped, that yields a
+    /// reversed trail marker that corrupts the sweep-line. A span that
+    /// collapses under the clamp is reported as body-less (`None`).
     fn child_span(&self) -> Option<ByteRange> {
         if self.first_child == u32::MAX {
+            return None;
+        }
+        let start = self.first_child.max(self.range.start);
+        let end = self.last_child_end.min(self.range.end);
+        if start >= end {
             None
         } else {
-            Some(ByteRange::new(self.first_child, self.last_child_end))
+            Some(ByteRange::new(start, end))
         }
     }
 }
@@ -127,12 +146,41 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
     if extensions.contains(Extensions::STRIKETHROUGH) {
         opts.insert(Options::ENABLE_STRIKETHROUGH);
     }
+    if extensions.contains(Extensions::WIKILINKS) {
+        opts.insert(Options::ENABLE_WIKILINKS);
+    }
 
     let mut stack: Vec<Frame> = Vec::new();
     let mut quote_depth = 0u32;
+    let mut table_depth = 0u32;
+    // Depth of a spurious subtree currently being skipped (see below).
+    let mut skip_depth = 0u32;
 
     for (event, range) in Parser::new_ext(text, opts).into_offset_iter() {
         let r = ByteRange::new(range.start as u32, range.end as u32);
+        // pulldown 0.13's empty-alias wikilink (`[[a|]]` + trailing inline)
+        // re-emits the rest of the paragraph *inside* the still-open link —
+        // duplicating text, markers, and whole sibling nodes (probed; see
+        // the zz golden tests). A legitimate child never starts at or past
+        // its parent's end, so any such non-End event is spurious: drop it,
+        // and for a Start, its entire subtree.
+        if skip_depth > 0 {
+            match event {
+                Event::Start(_) => skip_depth += 1,
+                Event::End(_) => skip_depth -= 1,
+                _ => {}
+            }
+            continue;
+        }
+        if !matches!(event, Event::End(_))
+            && let Some(top) = stack.last()
+            && r.start >= top.range.end
+        {
+            if matches!(event, Event::Start(_)) {
+                skip_depth = 1;
+            }
+            continue;
+        }
         match event {
             Event::Start(tag) => {
                 note_child(&mut stack, r);
@@ -148,7 +196,10 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                     Tag::Emphasis => NodeKind::Emphasis,
                     Tag::Strong => NodeKind::Strong,
                     Tag::Strikethrough => NodeKind::Strikethrough,
-                    Tag::Link { .. } => NodeKind::Link,
+                    Tag::Link { link_type, .. } => match link_type {
+                        LinkType::WikiLink { has_pothole } => NodeKind::WikiLink { has_pothole },
+                        _ => NodeKind::Link,
+                    },
                     Tag::Image { .. } => NodeKind::Image,
                     Tag::Table(_) => NodeKind::Table,
                     Tag::HtmlBlock => NodeKind::HtmlBlock,
@@ -160,12 +211,19 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                 if matches!(node, NodeKind::BlockQuote) {
                     quote_depth += 1;
                 }
+                // Captured BEFORE the increment: the table frame itself is not
+                // "in a table", so its own whole-table marker is never suppressed.
+                let enclosing_table = table_depth > 0;
+                if matches!(node, NodeKind::Table) {
+                    table_depth += 1;
+                }
                 stack.push(Frame {
                     node,
                     range: r,
                     first_child: u32::MAX,
                     last_child_end: 0,
                     quote_depth: enclosing_quotes,
+                    in_table: enclosing_table,
                     task: None,
                 });
             }
@@ -174,12 +232,15 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                 if matches!(frame.node, NodeKind::BlockQuote) {
                     quote_depth -= 1;
                 }
+                if matches!(frame.node, NodeKind::Table) {
+                    table_depth -= 1;
+                }
                 finish_node(text, frame, r, out);
             }
             Event::Text(_) => note_child(&mut stack, r),
             Event::Code(_) => {
                 note_child(&mut stack, r);
-                code_span(text, r, out);
+                code_span(text, r, out, table_depth > 0);
             }
             Event::InlineHtml(_) | Event::Html(_) => {
                 note_child(&mut stack, r);
@@ -193,10 +254,20 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                 if stack.is_empty() {
                     out.blocks.push(r);
                 }
+                let hr = trim_trailing_newline(text, r);
                 out.paints.push(Paint {
-                    range: trim_trailing_newline(text, r),
+                    range: hr,
                     kind: Kind::THEMATIC_BREAK,
                 });
+                // Co-located Block-scoped marker: the rule line conceals when
+                // the caret is off it (host draws a divider in its place) and
+                // reveals the raw `---` on it — same line policy as `> `.
+                // Quoted rules stay raw (no marker), the same v1 rule as
+                // quoted tables: the quote paragraph style owns the row, so
+                // there is no pinned height for a host to draw a divider into.
+                if quote_depth == 0 {
+                    push_marker(out, hr, Kind::MARKER, hr, MarkerScope::Block);
+                }
             }
             Event::TaskListMarker(checked) => {
                 note_child(&mut stack, r);
@@ -233,6 +304,7 @@ fn element_sort_key(e: &Element) -> u32 {
         ElementKind::Link { .. } => 1,
         ElementKind::Image { .. } => 2,
         ElementKind::Fence { .. } => 3,
+        ElementKind::WikiLink { .. } => 4,
     }
 }
 
@@ -274,7 +346,11 @@ fn paint_minus(range: ByteRange, holes: &[ByteRange], kind: Kind, out: &mut Pars
 }
 
 fn push_marker(out: &mut ParseOut, range: ByteRange, kind: Kind, owner: ByteRange, scope: MarkerScope) {
-    if !range.is_empty() {
+    // Fail closed: downstream (`flatten`, `current_owner`) guards
+    // well-formedness with debug_asserts only, so a reversed range would
+    // silently corrupt every segment after it in release. Drop it instead —
+    // a missing marker degrades one node's conceal, not the document.
+    if range.start < range.end {
         out.markers.push(MarkerPaint { range, kind, owner, scope });
     }
 }
@@ -285,23 +361,33 @@ fn push_marker(out: &mut ParseOut, range: ByteRange, kind: Kind, owner: ByteRang
 fn skip_quote_prefixes(text: &str, mut pos: u32, line_end: u32, depth: u32) -> Option<u32> {
     let bytes = text.as_bytes();
     for _ in 0..depth {
-        let mut p = pos;
-        let mut spaces = 0;
-        while p < line_end && bytes[p as usize] == b' ' && spaces < 3 {
-            p += 1;
-            spaces += 1;
-        }
-        if p < line_end && bytes[p as usize] == b'>' {
-            p += 1;
-            if p < line_end && bytes[p as usize] == b' ' {
-                p += 1;
-            }
-            pos = p;
-        } else {
-            return None;
-        }
+        let (_, after) = one_quote_prefix(bytes, pos, line_end)?;
+        pos = after;
     }
     Some(pos)
+}
+
+/// Consumes ONE blockquote prefix (up to 3 spaces, `>`, optional space) at
+/// `pos`, bounded by `line_end`. Returns `(marker_start, after)` where
+/// `marker_start` is the `>` byte — the single definition of the prefix
+/// shape shared by parse and behaviors.
+pub(crate) fn one_quote_prefix(bytes: &[u8], pos: u32, line_end: u32) -> Option<(u32, u32)> {
+    let mut p = pos;
+    let mut spaces = 0;
+    while p < line_end && bytes[p as usize] == b' ' && spaces < 3 {
+        p += 1;
+        spaces += 1;
+    }
+    if p < line_end && bytes[p as usize] == b'>' {
+        let marker = p;
+        p += 1;
+        if p < line_end && bytes[p as usize] == b' ' {
+            p += 1;
+        }
+        Some((marker, p))
+    } else {
+        None
+    }
 }
 
 fn finish_node(text: &str, frame: Frame, end_range: ByteRange, out: &mut ParseOut) {
@@ -324,20 +410,52 @@ fn finish_node(text: &str, frame: Frame, end_range: ByteRange, out: &mut ParseOu
         NodeKind::Strong => inline_span(&frame, Kind::STRONG, out),
         NodeKind::Strikethrough => inline_span(&frame, Kind::STRIKETHROUGH, out),
         NodeKind::Link => link_or_image(text, &frame, out, false),
+        NodeKind::WikiLink { has_pothole } => wikilink(text, &frame, out, has_pothole),
         NodeKind::Image => link_or_image(text, &frame, out, true),
-        NodeKind::Table => out.paints.push(Paint {
-            range: r,
-            kind: Kind::TABLE,
-        }),
+        NodeKind::Table => {
+            let table = trim_trailing_newline(text, r);
+            out.paints.push(Paint {
+                range: r,
+                kind: Kind::TABLE,
+            });
+            // Co-located Block-scoped marker over the table body (newline
+            // excluded, HR precedent): concealed off-caret so hosts can draw a
+            // grid view in its place, revealed to raw pipe-text whenever the
+            // caret's line touches ANY table line (owner-intersection policy).
+            // NEVER inside a blockquote: the quote's per-line `> ` markers live
+            // inside the table's range there, and markers must stay disjoint —
+            // a quoted table simply renders raw (documented v1 limitation).
+            if frame.quote_depth == 0 {
+                push_marker(out, table, Kind::MARKER, table, MarkerScope::Block);
+            }
+        }
         NodeKind::HtmlBlock => out.verbatim_blocks.push(r),
         NodeKind::Other => {}
     }
+}
+
+/// Inside a table, inline markers/elements are suppressed (the whole-table
+/// Block marker owns conceal): paint just the visible body, emit nothing
+/// else. Returns true when the frame was handled — callers return
+/// immediately. One helper so the rule can't drift across the three inline
+/// constructs.
+fn paint_table_body(frame: &Frame, kind: Kind, out: &mut ParseOut) -> bool {
+    if !frame.in_table {
+        return false;
+    }
+    if let Some(c) = frame.child_span() {
+        out.paints.push(Paint { range: c, kind });
+    }
+    true
 }
 
 /// Emphasis / strong / strikethrough: delimiters are the gaps between the
 /// node range and its direct children's span.
 fn inline_span(frame: &Frame, kind: Kind, out: &mut ParseOut) {
     let r = frame.range;
+    if paint_table_body(frame, kind, out) {
+        return;
+    }
     match frame.child_span() {
         Some(c) => {
             push_marker(out, ByteRange::new(r.start, c.start), Kind::MARKER, r, MarkerScope::Inline);
@@ -449,21 +567,10 @@ fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
         } else {
             frame.quote_depth
         };
-        if let Some(p) = skip_quote_prefixes(text, scan_from, line_end, depth) {
-            let mut q = p;
-            let mut spaces = 0;
-            while q < line_end && bytes[q as usize] == b' ' && spaces < 3 {
-                q += 1;
-                spaces += 1;
-            }
-            if q < line_end && bytes[q as usize] == b'>' {
-                let m_start = q;
-                q += 1;
-                if q < line_end && bytes[q as usize] == b' ' {
-                    q += 1;
-                }
-                own.push(ByteRange::new(m_start, q.min(r.end)));
-            }
+        if let Some(p) = skip_quote_prefixes(text, scan_from, line_end, depth)
+            && let Some((m_start, after)) = one_quote_prefix(bytes, p, line_end)
+        {
+            own.push(ByteRange::new(m_start, after.min(r.end)));
         }
         line_start = line_end + 1;
     }
@@ -471,7 +578,14 @@ fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
     for m in &own {
         push_marker(out, *m, Kind::MARKER, r, MarkerScope::Block);
     }
-    paint_minus(r, &own, Kind::BLOCKQUOTE, out);
+    // Full-range paint (markers included): the `> ` runs compose
+    // BLOCKQUOTE|MARKER, so a theme's paragraph style can key off the
+    // quote bit at the paragraph's first character (the F7/TASK pattern),
+    // and hosts can coalesce quote blocks from one uniform kind bit.
+    out.paints.push(Paint {
+        range: r,
+        kind: Kind::BLOCKQUOTE,
+    });
 }
 
 fn fenced_code(text: &str, frame: &Frame, out: &mut ParseOut) {
@@ -631,6 +745,15 @@ fn list_item(text: &str, frame: &Frame, out: &mut ParseOut) {
 fn link_or_image(text: &str, frame: &Frame, out: &mut ParseOut, image: bool) {
     let r = frame.range;
     let kind = if image { Kind::IMAGE } else { Kind::LINK };
+    if paint_table_body(frame, kind, out) {
+        return;
+    }
+    // No body-less special case here (unlike `wikilink`): links close with a
+    // single `]`, so a closer-offset filter would swallow the label of
+    // 1-character reference links like `[1]` (critic-caught regression). The
+    // `child_span` clamp + fail-closed `push_marker` already guarantee
+    // well-formed output for pulldown's corrupted re-walk; a re-walked
+    // sibling merely renders its `]]` visibly, which is transient cosmetics.
     let (lead, trail) = match frame.child_span() {
         Some(c) => (
             ByteRange::new(r.start, c.start),
@@ -709,7 +832,68 @@ fn scan_dest(text: &str, node: ByteRange, trail: ByteRange) -> ByteRange {
     ByteRange::new(node.end, node.end)
 }
 
-fn code_span(text: &str, r: ByteRange, out: &mut ParseOut) {
+/// Wikilinks (`[[target]]` / `[[target|alias]]`, pulldown `ENABLE_WIKILINKS`).
+/// pulldown emits these through `Tag::Link` with `LinkType::WikiLink`, whose
+/// single `Text` child is the *visible* body — the alias when piped, the
+/// target otherwise — spanning exactly the bytes that stay legible. The gap
+/// technique therefore paints the concealed runs for free: `[[` (plus
+/// `target|` when piped) becomes the lead marker, `]]` the trail marker, and
+/// the child span is the visible `LINK` body. Only the element's `target`
+/// needs a dedicated scan: pulldown's `dest_url` is an owned `CowStr` with no
+/// source offsets.
+fn wikilink(text: &str, frame: &Frame, out: &mut ParseOut, has_pothole: bool) {
+    let r = frame.range;
+    if paint_table_body(frame, Kind::LINK, out) {
+        return;
+    }
+    match frame.child_span() {
+        // An empty piped alias (`[[a|]]`) has no legible body — pulldown
+        // re-classifies the closing `]]` as two Text children. Anything
+        // starting inside the trailing `]]` is that junk: conceal the whole
+        // node. The element below still carries the target, so navigation
+        // works even in this mid-typing state.
+        Some(c) if c.start >= r.end.saturating_sub(2) => {
+            push_marker(out, r, Kind::MARKER, r, MarkerScope::Inline);
+        }
+        Some(c) => {
+            push_marker(out, ByteRange::new(r.start, c.start), Kind::MARKER, r, MarkerScope::Inline);
+            push_marker(out, ByteRange::new(c.end, r.end), Kind::MARKER, r, MarkerScope::Inline);
+            out.paints.push(Paint { range: c, kind: Kind::LINK });
+        }
+        // Body-less (empty wikiname never parses; kept as a defensive arm).
+        None => push_marker(out, r, Kind::MARKER, r, MarkerScope::Inline),
+    }
+
+    let target = scan_wikilink_target(text, r, has_pothole);
+    out.elements.push(Element {
+        id: 0,
+        range: r,
+        kind: ElementKind::WikiLink { target },
+    });
+}
+
+/// Locates the wikilink target range: the raw bytes between `[[` and the first
+/// literal `|` (piped form), or between `[[` and `]]` (plain form). Mirrors
+/// pulldown's `scan_wikilink_pipe`, which splits on the first *raw* `|` with no
+/// unescaping — so `[[a\|b|c]]` targets `a\` (probed). The node always has the
+/// shape `[[…]]` with a non-empty name here (pulldown never emits a wikilink
+/// otherwise), so `node.len() >= 5` and the `+2 / -2` never cross or underflow.
+fn scan_wikilink_target(text: &str, node: ByteRange, has_pothole: bool) -> ByteRange {
+    let start = node.start + 2; // past the opening `[[`
+    let inner_end = node.end - 2; // before the closing `]]`
+    if has_pothole {
+        let bytes = text.as_bytes();
+        let mut p = start;
+        while p < inner_end && bytes[p as usize] != b'|' {
+            p += 1;
+        }
+        ByteRange::new(start, p)
+    } else {
+        ByteRange::new(start, inner_end)
+    }
+}
+
+fn code_span(text: &str, r: ByteRange, out: &mut ParseOut, in_table: bool) {
     let bytes = text.as_bytes();
     let mut open = r.start;
     while open < r.end && bytes[open as usize] == b'`' {
@@ -719,8 +903,10 @@ fn code_span(text: &str, r: ByteRange, out: &mut ParseOut) {
     while close > open && bytes[close as usize - 1] == b'`' {
         close -= 1;
     }
-    push_marker(out, ByteRange::new(r.start, open), Kind::MARKER, r, MarkerScope::Inline);
-    push_marker(out, ByteRange::new(close, r.end), Kind::MARKER, r, MarkerScope::Inline);
+    if !in_table {
+        push_marker(out, ByteRange::new(r.start, open), Kind::MARKER, r, MarkerScope::Inline);
+        push_marker(out, ByteRange::new(close, r.end), Kind::MARKER, r, MarkerScope::Inline);
+    }
     if open < close {
         out.paints.push(Paint {
             range: ByteRange::new(open, close),

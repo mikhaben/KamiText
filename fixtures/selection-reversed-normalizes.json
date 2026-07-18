@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "selection-reversed-normalizes",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "# one\n**two**\n",
   "ops": [
     {"type":"selection","start":9,"end":2}

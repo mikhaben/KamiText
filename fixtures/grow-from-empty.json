@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "grow-from-empty",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "",
   "ops": [
     {"type":"edit","start":0,"end":0,"insert":"# hi"},

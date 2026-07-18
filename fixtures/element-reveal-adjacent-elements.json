@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "element-reveal-adjacent-elements",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "element"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "element"},
   "text": "**a**_b_ tail\n",
   "ops": [
     {"type":"selection","start":5,"end":5}

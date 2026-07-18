@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "task-list-elements",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "- [ ] todo\n- [x] done\n- plain\n",
   "ops": [
     {"type":"selection","start":29,"end":29}

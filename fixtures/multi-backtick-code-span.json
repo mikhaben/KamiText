@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "multi-backtick-code-span",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "`` a`b `` end\n",
   "ops": [
     {"type":"selection","start":13,"end":13}

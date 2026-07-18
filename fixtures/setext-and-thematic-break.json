@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "setext-and-thematic-break",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "Title\n=====\n\n---\n\ntext\n",
   "ops": [
     {"type":"selection","start":22,"end":22}
@@ -15,7 +15,7 @@
       {"range":{"start":6,"end":11,"utf16Start":6,"utf16End":11},"kinds":["marker"],"concealed":true},
       {"range":{"start":11,"end":12,"utf16Start":11,"utf16End":12},"kinds":["heading1"],"concealed":false},
       {"range":{"start":12,"end":13,"utf16Start":12,"utf16End":13},"kinds":["body"],"concealed":false},
-      {"range":{"start":13,"end":16,"utf16Start":13,"utf16End":16},"kinds":["thematic_break"],"concealed":false},
+      {"range":{"start":13,"end":16,"utf16Start":13,"utf16End":16},"kinds":["thematic_break","marker"],"concealed":true},
       {"range":{"start":16,"end":23,"utf16Start":16,"utf16End":23},"kinds":["body"],"concealed":false}
     ],
     "elements": [],

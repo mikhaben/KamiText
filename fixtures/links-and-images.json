@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "links-and-images",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "See [docs](https://e.com \"t\") and ![alt](img.png)\nnext\n",
   "ops": [
     {"type":"selection","start":52,"end":52}

@@ -100,6 +100,7 @@ bitflags! {
         const TABLES        = 1 << 0;
         const TASK_LISTS    = 1 << 1;
         const STRIKETHROUGH = 1 << 2;
+        const WIKILINKS     = 1 << 3;
     }
 }
 
@@ -160,6 +161,7 @@ pub enum ElementKind {
     Link { dest: ByteRange },
     Image { src: ByteRange },
     Fence { info: ByteRange },
+    WikiLink { target: ByteRange },
 }
 
 /// An interactive semantic object. `id` is stable within a parse

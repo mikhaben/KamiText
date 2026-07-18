@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "selection-spanning-lines",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "# one\n**two**\n*three*\nplain\n",
   "ops": [
     {"type":"selection","start":0,"end":0},

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "emoji-astral-mid-marker",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "**a😀b** tail\n",
   "ops": [
     {"type":"edit","start":7,"end":7,"insert":"😀"},

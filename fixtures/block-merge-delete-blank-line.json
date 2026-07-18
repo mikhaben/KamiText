@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "block-merge-delete-blank-line",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "# one\n\ntwo\n",
   "ops": [
     {"type":"edit","start":6,"end":7,"insert":""}

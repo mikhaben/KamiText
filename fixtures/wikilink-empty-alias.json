@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "wikilink-empty-alias",
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
+  "text": "[[a|]] tail\nx\n",
+  "ops": [
+    {"type":"selection","start":13,"end":13}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[{"start":0,"end":6,"utf16Start":0,"utf16End":6}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":6,"utf16Start":0,"utf16End":6},"kinds":["marker"],"concealed":true},
+      {"range":{"start":6,"end":14,"utf16Start":6,"utf16End":14},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":6,"utf16Start":0,"utf16End":6},"kind":"wikilink","target":{"start":2,"end":3,"utf16Start":2,"utf16End":3}}
+    ],
+    "text": "[[a|]] tail\nx\n",
+    "lenBytes": 14,
+    "lenUtf16": 14
+  }
+}

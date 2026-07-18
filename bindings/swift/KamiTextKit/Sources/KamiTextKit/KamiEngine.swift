@@ -25,7 +25,8 @@ public final class KamiEngine {
         public static let tables = Extensions(rawValue: 1 << 0)
         public static let taskLists = Extensions(rawValue: 1 << 1)
         public static let strikethrough = Extensions(rawValue: 1 << 2)
-        public static let all: Extensions = [.tables, .taskLists, .strikethrough]
+        public static let wikilinks = Extensions(rawValue: 1 << 3)
+        public static let all: Extensions = [.tables, .taskLists, .strikethrough, .wikilinks]
     }
 
     /// Mirrors `KamiOptions.reveal`.

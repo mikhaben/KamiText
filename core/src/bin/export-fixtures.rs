@@ -136,6 +136,21 @@ fn fixtures() -> Vec<Fixture> {
             ops: vec![Op::Selection(52, 52)],
         },
         Fixture {
+            name: "wikilinks",
+            options: default_opts(),
+            text: "[[Note]] and [[target|alias]]\ntail\n",
+            ops: vec![Op::Selection(35, 35)],
+        },
+        Fixture {
+            // Empty piped alias: the mid-typing state that makes pulldown
+            // re-emit the paragraph tail inside the still-open link (the
+            // reversed-marker regression). The node conceals whole.
+            name: "wikilink-empty-alias",
+            options: default_opts(),
+            text: "[[a|]] tail\nx\n",
+            ops: vec![Op::Selection(13, 13)],
+        },
+        Fixture {
             name: "fence-and-quote",
             options: default_opts(),
             text: "> quote **b**\n\n```rust\nlet x = 1;\n```\n",
@@ -346,6 +361,7 @@ fn export(f: &Fixture) -> String {
         (Extensions::TABLES, "tables"),
         (Extensions::TASK_LISTS, "task_lists"),
         (Extensions::STRIKETHROUGH, "strikethrough"),
+        (Extensions::WIKILINKS, "wikilinks"),
     ] {
         if f.options.extensions.contains(bit) {
             if !first {
@@ -449,6 +465,10 @@ fn export(f: &Fixture) -> String {
             ElementKind::Fence { info } => {
                 out.push_str(",\"kind\":\"fence\",\"info\":");
                 range_obj(&e, info, &mut out);
+            }
+            ElementKind::WikiLink { target } => {
+                out.push_str(",\"kind\":\"wikilink\",\"target\":");
+                range_obj(&e, target, &mut out);
             }
         }
         out.push('}');

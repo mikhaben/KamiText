@@ -46,6 +46,9 @@ pub const ATOMS: &[&str] = &[
     "- [ ] t\n", "- [x] t\n", "> q\n", "```\nx\n```\n", "[l](u)", "![i](s)",
     "---\n", "| a |\n|---|\n| b |\n", "plain ", "日本", "😀", "\u{200D}", "\n",
     "a", " ", "<b>x</b>", "Title\n===\n", "***n***",
+    // Wikilinks, incl. the empty-alias mid-typing state that makes pulldown
+    // 0.13 re-emit the paragraph tail inside the still-open link.
+    "[[w]]", "[[t|al]]", "[[t|]]",
 ];
 
 /// xorshift64* — deterministic, dependency-free PRNG. `pseudo_fuzz.rs` keeps

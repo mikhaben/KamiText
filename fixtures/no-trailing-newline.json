@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "no-trailing-newline",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "**strong** end",
   "ops": [],
   "expect": {

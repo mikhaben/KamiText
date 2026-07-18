@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "empty-document",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "",
   "ops": [],
   "expect": {

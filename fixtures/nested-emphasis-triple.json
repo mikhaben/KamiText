@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "nested-emphasis-triple",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "line"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
   "text": "***x*** and **_y_**\n",
   "ops": [
     {"type":"selection","start":20,"end":20}

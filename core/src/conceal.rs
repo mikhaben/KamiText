@@ -33,17 +33,28 @@ pub fn reveal_region(
         }
         RevealMode::Block => {
             // Union of top-level blocks intersecting the selection; between
-            // blocks (blank lines) fall back to the selection itself.
-            let mut region: Option<ByteRange> = None;
-            for b in blocks {
-                if b.intersects(selection) {
-                    region = Some(match region {
-                        None => *b,
-                        Some(r) => ByteRange::new(r.start.min(b.start), r.end.max(b.end)),
-                    });
-                }
+            // blocks (blank lines) fall back to the selection itself. Blocks
+            // are document-ordered and disjoint, so the intersecting run is
+            // contiguous — binary-search its edges (mirrors `intersects()`:
+            // a zero-width selection at `p` touches `[a, b)` when a <= p < b).
+            // Load-bearing: `out.blocks` is sorted-by-start and disjoint
+            // (top-level Start + Rule ranges partition the document) — the
+            // binary search is wrong for any other shape.
+            debug_assert!(
+                blocks.windows(2).all(|w| w[0].end <= w[1].start),
+                "blocks must be sorted and disjoint"
+            );
+            let first = blocks.partition_point(|b| b.end <= selection.start);
+            let last = if selection.is_empty() {
+                blocks.partition_point(|b| b.start <= selection.start)
+            } else {
+                blocks.partition_point(|b| b.start < selection.end)
+            };
+            if first < last {
+                Some(ByteRange::new(blocks[first].start, blocks[last - 1].end))
+            } else {
+                Some(selection)
             }
-            Some(region.unwrap_or(selection))
         }
     }
 }

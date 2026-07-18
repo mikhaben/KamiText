@@ -32,24 +32,10 @@ fn scan_prefix(text: &str, line: ByteRange, task_lists: bool) -> LinePrefix {
     // spaces, '>', optional space).
     let mut quotes_end = line.start;
     let mut has_quotes = false;
-    loop {
-        let mut q = p;
-        let mut spaces = 0;
-        while q < line.end && bytes[q as usize] == b' ' && spaces < 3 {
-            q += 1;
-            spaces += 1;
-        }
-        if q < line.end && bytes[q as usize] == b'>' {
-            q += 1;
-            if q < line.end && bytes[q as usize] == b' ' {
-                q += 1;
-            }
-            p = q;
-            quotes_end = q;
-            has_quotes = true;
-        } else {
-            break;
-        }
+    while let Some((_, after)) = crate::parse::one_quote_prefix(bytes, p, line.end) {
+        p = after;
+        quotes_end = after;
+        has_quotes = true;
     }
 
     // List-item indent after the quotes.

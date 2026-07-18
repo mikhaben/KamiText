@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "element-reveal-selection-span",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "element"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "element"},
   "text": "**a** *b* ~~c~~ tail\n",
   "ops": [
     {"type":"selection","start":2,"end":12}

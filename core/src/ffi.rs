@@ -30,7 +30,7 @@ use crate::types::{
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// ABI version. Bumped on any breaking layout or semantic change.
-pub const KAMI_ABI_VERSION: u32 = 1;
+pub const KAMI_ABI_VERSION: u32 = 2;
 
 pub const KAMI_OK: i32 = 0;
 /// Out-of-bounds, reversed or scalar-splitting range on a mutating call.
@@ -54,7 +54,7 @@ pub struct KamiEngine {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct KamiOptions {
-    /// Bitflags: 1 = tables, 2 = task lists, 4 = strikethrough.
+    /// Bitflags: 1 = tables, 2 = task lists, 4 = strikethrough, 8 = wikilinks.
     pub extensions: u32,
     /// 0 = none (reader), 1 = line (default), 2 = block, 3 = element.
     pub reveal: u32,
@@ -85,6 +85,7 @@ pub const KAMI_ELEMENT_TASK: u32 = 0;
 pub const KAMI_ELEMENT_LINK: u32 = 1;
 pub const KAMI_ELEMENT_IMAGE: u32 = 2;
 pub const KAMI_ELEMENT_FENCE: u32 = 3;
+pub const KAMI_ELEMENT_WIKILINK: u32 = 4;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -381,24 +382,8 @@ pub unsafe extern "C" fn kami_apply_edit(
                 cell.err = "replacement is not valid UTF-8".into();
                 return KAMI_ERR_INVALID_UTF8;
             };
-            match cell.engine.apply_edit(ByteRange::new(start, end), repl) {
-                Ok(patch) => {
-                    if !out_patch.is_null() {
-                        let mut view = KamiPatch {
-                            ranges: core::ptr::null(),
-                            len: 0,
-                            generation: cell.generation,
-                        };
-                        fill_patch(cell, &patch.dirty, &mut view);
-                        *out_patch = view;
-                    }
-                    KAMI_OK
-                }
-                Err(e) => {
-                    cell.err = e.to_string();
-                    err_code(e)
-                }
-            }
+            let result = cell.engine.apply_edit(ByteRange::new(start, end), repl);
+            patch_response(cell, result, out_patch)
         })
     }
 }
@@ -412,25 +397,42 @@ pub unsafe extern "C" fn kami_set_selection(
 ) -> i32 {
     unsafe {
         with_cell(engine, |cell| {
-            match cell.engine.set_selection(ByteRange::new(start, end)) {
-                Ok(patch) => {
-                    if !out_patch.is_null() {
-                        let mut view = KamiPatch {
-                            ranges: core::ptr::null(),
-                            len: 0,
-                            generation: cell.generation,
-                        };
-                        fill_patch(cell, &patch.dirty, &mut view);
-                        *out_patch = view;
-                    }
-                    KAMI_OK
-                }
-                Err(e) => {
-                    cell.err = e.to_string();
-                    err_code(e)
-                }
-            }
+            let result = cell.engine.set_selection(ByteRange::new(start, end));
+            patch_response(cell, result, out_patch)
         })
+    }
+}
+
+/// Shared Ok/Err tail of the two patch-returning entry points: fill the
+/// caller's out-patch view on success, record the error message on failure.
+///
+/// # Safety
+/// `out_patch`, when non-null, must point to writable memory for one
+/// `KamiPatch` (the entry points' own contract).
+fn patch_response(
+    cell: &mut Cell,
+    result: Result<crate::types::Patch, KamiError>,
+    out_patch: *mut KamiPatch,
+) -> i32 {
+    match result {
+        Ok(patch) => {
+            if !out_patch.is_null() {
+                let mut view = KamiPatch {
+                    ranges: core::ptr::null(),
+                    len: 0,
+                    generation: cell.generation,
+                };
+                fill_patch(cell, &patch.dirty, &mut view);
+                // SAFETY: non-null per the check; validity is the entry
+                // points' documented contract.
+                unsafe { *out_patch = view };
+            }
+            KAMI_OK
+        }
+        Err(e) => {
+            cell.err = e.to_string();
+            err_code(e)
+        }
     }
 }
 
@@ -487,6 +489,7 @@ pub unsafe extern "C" fn kami_elements_in(
                     ElementKind::Link { dest } => (KAMI_ELEMENT_LINK, 0, dest),
                     ElementKind::Image { src } => (KAMI_ELEMENT_IMAGE, 0, src),
                     ElementKind::Fence { info } => (KAMI_ELEMENT_FENCE, 0, info),
+                    ElementKind::WikiLink { target } => (KAMI_ELEMENT_WIKILINK, 0, target),
                 };
                 KamiElement {
                     id: e.id,

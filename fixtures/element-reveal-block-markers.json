@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "element-reveal-block-markers",
-  "options": {"extensions": ["tables","task_lists","strikethrough"], "reveal": "element"},
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "element"},
   "text": "# heading\n> quote\n- [ ] task\n",
   "ops": [
     {"type":"selection","start":5,"end":5}
@@ -13,7 +13,7 @@
     "segments": [
       {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
       {"range":{"start":2,"end":10,"utf16Start":2,"utf16End":10},"kinds":["heading1"],"concealed":false},
-      {"range":{"start":10,"end":12,"utf16Start":10,"utf16End":12},"kinds":["marker"],"concealed":true},
+      {"range":{"start":10,"end":12,"utf16Start":10,"utf16End":12},"kinds":["blockquote","marker"],"concealed":true},
       {"range":{"start":12,"end":18,"utf16Start":12,"utf16End":18},"kinds":["blockquote"],"concealed":false},
       {"range":{"start":18,"end":24,"utf16Start":18,"utf16End":24},"kinds":["task_marker"],"concealed":true},
       {"range":{"start":24,"end":29,"utf16Start":24,"utf16End":29},"kinds":["body"],"concealed":false}

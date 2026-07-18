@@ -67,10 +67,11 @@ public enum KamiElementKind: UInt32, Sendable, Equatable {
     case link = 1
     case image = 2
     case fence = 3
+    case wikilink = 4
 }
 
 /// A semantic object an adapter may want to make interactive: task checkbox,
-/// link, image, or fence.
+/// link, image, fence, or wikilink.
 ///
 /// `kind` is `nil` when the C ABI's tag isn't one of the known cases —
 /// adapters must ignore elements they don't recognize rather than guess, so

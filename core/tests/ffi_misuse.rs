@@ -14,7 +14,7 @@ fn new_engine(text: &str) -> *mut KamiEngine {
 
 #[test]
 fn abi_version_reported() {
-    assert_eq!(kami_abi_version(), 1);
+    assert_eq!(kami_abi_version(), 2);
 }
 
 #[test]
@@ -326,6 +326,47 @@ fn patch_and_conversion_roundtrip() {
         assert!(patch.len >= 1);
         let r0 = *patch.ranges;
         assert!(r0.start == 0 && r0.end >= 1);
+        kami_engine_free(e);
+    }
+}
+
+#[test]
+fn elements_in_misuse_and_wikilink_marshalling() {
+    // Wikilinks need extension bit 3 — new_engine's 0b111 predates it.
+    let opts = KamiOptions {
+        extensions: 0b1111,
+        reveal: 1,
+    };
+    let text = "[[Note]] x\n";
+    let e = unsafe { kami_engine_new(text.as_ptr(), text.len(), opts) };
+    assert!(!e.is_null());
+    unsafe {
+        let mut els = KamiElements {
+            ptr: ptr::null(),
+            len: 0,
+            generation: 0,
+        };
+        // NULL engine / NULL out fail closed.
+        assert_eq!(
+            kami_elements_in(ptr::null_mut(), 0, 5, &mut els),
+            KAMI_ERR_NULL
+        );
+        assert_eq!(kami_elements_in(e, 0, 5, ptr::null_mut()), KAMI_ERR_NULL);
+
+        // Reversed and out-of-bounds ranges normalize instead of failing.
+        assert_eq!(kami_elements_in(e, 9999, 0, &mut els), KAMI_OK);
+        assert_eq!(els.len, 1);
+        let el = *els.ptr;
+        assert_eq!(el.kind, KAMI_ELEMENT_WIKILINK);
+        assert_eq!((el.start, el.end), (0, 8));
+        // aux = target range ("Note").
+        assert_eq!((el.aux_start, el.aux_end), (2, 6));
+
+        // The view dies at the next call: generation must move on.
+        let g = els.generation;
+        assert_eq!(kami_elements_in(e, 0, 0, &mut els), KAMI_OK);
+        assert!(els.generation > g);
+
         kami_engine_free(e);
     }
 }

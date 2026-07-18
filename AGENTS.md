@@ -62,7 +62,7 @@ bindings/swift/
     │   └── KamiTextSync.swift  # reusable host driver: willChange/didChange/selectionChanged state machine, IME/undo/desync recovery, setTheme
     ├── Sources/KamiDemoMac/main.swift    # AppKit demo window (NSTextView TextKit 2) + --selftest; reference host wiring incl. Cmd+T re-theme
     └── Tests/KamiTextKitTests/ # fixture conformance replay, applier/memo/setTheme regressions, marked-text desync, differential fuzz through a live view
-fixtures/                       # 32 conformance fixtures — adapters replaying these correctly are conformant
+fixtures/                       # 34 conformance fixtures — adapters replaying these correctly are conformant (the Swift suite replays every one, discovered from the directory)
 corpora/                        # real-markdown regression corpus + manifest.json (sources, licenses, marker density)
 PLATFORM_BUGS.md                # AppKit/TextKit quirk ledger: status, workarounds, retest dates, negative findings
 ```
