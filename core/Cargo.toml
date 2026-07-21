@@ -10,6 +10,10 @@ crate-type = ["lib", "staticlib"]
 
 [dependencies]
 pulldown-cmark = { version = "0.13", default-features = false }
+# Reference-label case folding. Pinned transitively by pulldown already (2.9.0
+# in Cargo.lock) — a direct dep so link-label lookups fold EXACTLY like
+# pulldown's own RefDefs map (UniCase), not an ASCII approximation.
+unicase = "2.9"
 bitflags = "2"
 
 [dev-dependencies]

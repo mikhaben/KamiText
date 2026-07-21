@@ -20,6 +20,7 @@
 
 use crate::types::{ByteRange, Element, ElementKind, Extensions, Kind, MarkerScope};
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag};
+use unicase::UniCase;
 
 /// A content-kind paint: adds `kind` to every byte in `range`. Never concealed.
 #[derive(Debug, Clone, Copy)]
@@ -88,9 +89,9 @@ enum NodeKind {
     Emphasis,
     Strong,
     Strikethrough,
-    Link,
+    Link { reference: Option<String> },
     WikiLink { has_pothole: bool },
-    Image,
+    Image { reference: Option<String> },
     Table,
     HtmlBlock,
     Other,
@@ -156,7 +157,28 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
     // Depth of a spurious subtree currently being skipped (see below).
     let mut skip_depth = 0u32;
 
-    for (event, range) in Parser::new_ext(text, opts).into_offset_iter() {
+    // Reference definitions are resolved by pulldown's eager first pass and
+    // exposed on the OffsetIter before we consume it. Snapshot them owned:
+    // `def_spans` (span-sorted) drives def-line concealment (§2.3), and
+    // `def_urls` (label-sorted) resolves link dests by binary search (§2.1) —
+    // O((links+defs)·log defs), keeping the apply_edit p50 gate safe on
+    // def-heavy documents. Labels fold with `UniCase`, the SAME type pulldown's
+    // own RefDefs map keys on, so our lookup can never disagree with pulldown's
+    // resolution (an ASCII fold would leave a resolved non-ASCII link with an
+    // empty dest). Both sorts are total orders over unique keys (one def per
+    // label; spans can't collide), so output stays deterministic.
+    let iter = Parser::new_ext(text, opts).into_offset_iter();
+    let mut def_spans: Vec<ByteRange> = Vec::new();
+    let mut def_urls: Vec<(UniCase<String>, ByteRange)> = Vec::new();
+    for (label, def) in iter.reference_definitions().iter() {
+        let span = ByteRange::new(def.span.start as u32, def.span.end as u32);
+        def_spans.push(span);
+        def_urls.push((UniCase::new(label.to_string()), scan_def_url(text, span)));
+    }
+    def_spans.sort_by_key(|s| s.start);
+    def_urls.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (event, range) in iter {
         let r = ByteRange::new(range.start as u32, range.end as u32);
         // pulldown 0.13's empty-alias wikilink (`[[a|]]` + trailing inline)
         // re-emits the rest of the paragraph *inside* the still-open link —
@@ -196,11 +218,15 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                     Tag::Emphasis => NodeKind::Emphasis,
                     Tag::Strong => NodeKind::Strong,
                     Tag::Strikethrough => NodeKind::Strikethrough,
-                    Tag::Link { link_type, .. } => match link_type {
-                        LinkType::WikiLink { has_pothole } => NodeKind::WikiLink { has_pothole },
-                        _ => NodeKind::Link,
-                    },
-                    Tag::Image { .. } => NodeKind::Image,
+                    Tag::Link { link_type: LinkType::WikiLink { has_pothole }, .. } => {
+                        NodeKind::WikiLink { has_pothole }
+                    }
+                    Tag::Link { link_type, id, .. } => {
+                        NodeKind::Link { reference: reference_id(link_type, id.as_ref()) }
+                    }
+                    Tag::Image { link_type, id, .. } => {
+                        NodeKind::Image { reference: reference_id(link_type, id.as_ref()) }
+                    }
                     Tag::Table(_) => NodeKind::Table,
                     Tag::HtmlBlock => NodeKind::HtmlBlock,
                     _ => NodeKind::Other,
@@ -235,7 +261,7 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                 if matches!(frame.node, NodeKind::Table) {
                     table_depth -= 1;
                 }
-                finish_node(text, frame, r, out);
+                finish_node(text, frame, r, &def_urls, extensions, out);
             }
             Event::Text(_) => note_child(&mut stack, r),
             Event::Code(_) => {
@@ -280,6 +306,32 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
         }
     }
     debug_assert!(stack.is_empty(), "unbalanced pulldown events");
+
+    // Conceal each reference definition line (§2.3 b1): a Block-scoped MARKER
+    // over the def span hides it off-caret and reveals raw source on-caret,
+    // mirroring the thematic-break precedent. Blockquoted defs stay raw (same
+    // v1 rule as quoted rules/tables) — the quote's per-line `> ` markers would
+    // otherwise overlap. push_marker fails closed on a reversed/empty span.
+    //
+    // Unlike `Event::Rule`, def spans are deliberately NOT pushed into
+    // `out.blocks`: a def can sit inside a list item's block, so registering it
+    // would break the sorted+disjoint invariant `reveal_region` relies on. The
+    // Block-scoped marker still reveals correctly under `RevealMode::Line`/
+    // `Element` (the only modes shipping apps select — iOS Line, macOS None/
+    // Element) via `line_region`; under the unused `RevealMode::Block` a def
+    // reveals only when the caret is strictly inside its span.
+    //
+    // Known v1 limitation: pulldown's RefDefs keeps ONE span per label (the
+    // first, per CommonMark's first-definition-wins), so a DUPLICATE-label
+    // definition line has no span here and renders as raw body text while the
+    // first conceals. Rare (duplicate defs are usually authoring mistakes) and
+    // honest — the raw line is visibly editable.
+    for span in &def_spans {
+        if def_in_blockquote(text, *span) {
+            continue;
+        }
+        push_marker(out, *span, Kind::MARKER, *span, MarkerScope::Block);
+    }
 
     // Element ids are assigned in document order (stable within a parse
     // generation, deterministic).
@@ -391,14 +443,21 @@ pub(crate) fn one_quote_prefix(bytes: &[u8], pos: u32, line_end: u32) -> Option<
     }
 }
 
-fn finish_node(text: &str, frame: Frame, end_range: ByteRange, out: &mut ParseOut) {
+fn finish_node(
+    text: &str,
+    frame: Frame,
+    end_range: ByteRange,
+    def_urls: &[(UniCase<String>, ByteRange)],
+    extensions: Extensions,
+    out: &mut ParseOut,
+) {
     // Start and End event ranges are identical for the same node (probed).
     debug_assert_eq!(frame.range, end_range);
     let r = frame.range;
     match frame.node {
         NodeKind::Heading(level) => heading(text, &frame, out, level),
         NodeKind::BlockQuote => blockquote(text, &frame, out),
-        NodeKind::FencedCode => fenced_code(text, &frame, out),
+        NodeKind::FencedCode => fenced_code(text, &frame, extensions, out),
         NodeKind::IndentedCode => {
             out.paints.push(Paint {
                 range: r,
@@ -410,9 +469,9 @@ fn finish_node(text: &str, frame: Frame, end_range: ByteRange, out: &mut ParseOu
         NodeKind::Emphasis => inline_span(&frame, Kind::EMPHASIS, out),
         NodeKind::Strong => inline_span(&frame, Kind::STRONG, out),
         NodeKind::Strikethrough => inline_span(&frame, Kind::STRIKETHROUGH, out),
-        NodeKind::Link => link_or_image(text, &frame, out, false),
+        NodeKind::Link { .. } => link_or_image(text, &frame, def_urls, out, false),
         NodeKind::WikiLink { has_pothole } => wikilink(text, &frame, out, has_pothole),
-        NodeKind::Image => link_or_image(text, &frame, out, true),
+        NodeKind::Image { .. } => link_or_image(text, &frame, def_urls, out, true),
         NodeKind::Table => {
             let table = trim_trailing_newline(text, r);
             out.paints.push(Paint {
@@ -635,7 +694,7 @@ fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
     });
 }
 
-fn fenced_code(text: &str, frame: &Frame, out: &mut ParseOut) {
+fn fenced_code(text: &str, frame: &Frame, extensions: Extensions, out: &mut ParseOut) {
     let r = frame.range;
     let bytes = text.as_bytes();
     let mut own: Vec<ByteRange> = Vec::new();
@@ -708,16 +767,32 @@ fn fenced_code(text: &str, frame: &Frame, out: &mut ParseOut) {
         }
     }
 
-    own.sort_by_key(|m| m.start);
-    for m in &own {
-        let kind = if *m == info_range && !info_range.is_empty() {
-            Kind::FENCE_INFO
-        } else {
-            Kind::MARKER
-        };
-        push_marker(out, *m, kind, r, MarkerScope::Block);
+    // Structural code (`Extensions::STRUCTURAL_CODE`, host opt-in): ONE
+    // Block-scoped marker over the whole block replaces the fence/info
+    // markers — the table model. Concealed off-caret so the host draws a
+    // horizontally scrolling code view in the reserved space; revealed to the
+    // raw fences+body whenever the caret's line touches the block. Never
+    // inside a blockquote (the quote's per-line `> ` markers live inside the
+    // block's range and markers must stay disjoint — the quoted-table rule).
+    if extensions.contains(Extensions::STRUCTURAL_CODE) && frame.quote_depth == 0 {
+        let code = trim_trailing_newline(text, r);
+        push_marker(out, code, Kind::MARKER, code, MarkerScope::Block);
+        out.paints.push(Paint {
+            range: r,
+            kind: Kind::CODE_BLOCK,
+        });
+    } else {
+        own.sort_by_key(|m| m.start);
+        for m in &own {
+            let kind = if *m == info_range && !info_range.is_empty() {
+                Kind::FENCE_INFO
+            } else {
+                Kind::MARKER
+            };
+            push_marker(out, *m, kind, r, MarkerScope::Block);
+        }
+        paint_minus(r, &own, Kind::CODE_BLOCK, out);
     }
-    paint_minus(r, &own, Kind::CODE_BLOCK, out);
 
     out.verbatim_blocks.push(r);
     out.elements.push(Element {
@@ -789,7 +864,13 @@ fn list_item(text: &str, frame: &Frame, out: &mut ParseOut) {
     }
 }
 
-fn link_or_image(text: &str, frame: &Frame, out: &mut ParseOut, image: bool) {
+fn link_or_image(
+    text: &str,
+    frame: &Frame,
+    def_urls: &[(UniCase<String>, ByteRange)],
+    out: &mut ParseOut,
+    image: bool,
+) {
     let r = frame.range;
     let kind = if image { Kind::IMAGE } else { Kind::LINK };
     if paint_table_body(frame, kind, out) {
@@ -820,7 +901,25 @@ fn link_or_image(text: &str, frame: &Frame, out: &mut ParseOut, image: bool) {
         out.paints.push(Paint { range: c, kind });
     }
 
-    let dest = scan_dest(text, r, trail);
+    // Reference/collapsed/shortcut links carry their label on the node; their
+    // dest lives in a definition, so binary-search the label-sorted def index
+    // (§2.1). `UniCase` folding matches pulldown's own map exactly, so any link
+    // pulldown resolved is guaranteed to find its def here — including
+    // non-ASCII labels differing only in case. Inline/autolink dests still come
+    // from scan_dest.
+    let reference = match &frame.node {
+        NodeKind::Link { reference } | NodeKind::Image { reference } => reference.as_deref(),
+        _ => None,
+    };
+    let dest = match reference {
+        Some(label) => {
+            let needle = UniCase::new(label.to_string());
+            def_urls
+                .binary_search_by(|(l, _)| l.cmp(&needle))
+                .map_or(ByteRange::new(r.end, r.end), |i| def_urls[i].1)
+        }
+        None => scan_dest(text, r, trail),
+    };
     out.elements.push(Element {
         id: 0,
         range: r,
@@ -877,6 +976,93 @@ fn scan_dest(text: &str, node: ByteRange, trail: ByteRange) -> ByteRange {
         return ByteRange::new(node.start + 1, node.end - 1);
     }
     ByteRange::new(node.end, node.end)
+}
+
+/// Maps a link/image `LinkType` to its reference label, if it is a
+/// reference/collapsed/shortcut form (whose destination lives in a definition,
+/// invisible to `scan_dest` at the link site). Inline/autolink/email carry the
+/// dest inline and return `None`. The `*Unknown` variants only occur with a
+/// broken-link callback (we install none) — matched defensively.
+fn reference_id(link_type: LinkType, id: &str) -> Option<String> {
+    match link_type {
+        LinkType::Reference
+        | LinkType::ReferenceUnknown
+        | LinkType::Collapsed
+        | LinkType::CollapsedUnknown
+        | LinkType::Shortcut
+        | LinkType::ShortcutUnknown => Some(id.to_string()),
+        _ => None,
+    }
+}
+
+/// Byte range of the URL inside a definition `span`. Mirrors `scan_dest`'s
+/// angle-bracket / bare-token rules: skip the label `[...]` (honoring `\]`),
+/// the `:`, and leading spaces/tabs; `<url>` yields the inner bytes, otherwise
+/// the URL runs to the next whitespace or `span.end`. Title text and a
+/// title-continuation line (both after whitespace) are excluded.
+fn scan_def_url(text: &str, span: ByteRange) -> ByteRange {
+    let bytes = text.as_bytes();
+    let end = span.end;
+    let mut p = span.start;
+    if p < end && bytes[p as usize] == b'[' {
+        p += 1;
+        while p < end && bytes[p as usize] != b']' {
+            if bytes[p as usize] == b'\\' {
+                p += 1;
+            }
+            p += 1;
+        }
+        if p < end {
+            p += 1; // past the closing `]`
+        }
+    }
+    if p < end && bytes[p as usize] == b':' {
+        p += 1;
+    }
+    // Whitespace between `:` and the URL, INCLUDING a line ending — CommonMark
+    // allows the destination on the line after the label (`[ref]:\nurl`). The
+    // span boundary already excludes any blank-line gap, so crossing newlines
+    // here can never overshoot past the destination. A QUOTED def's
+    // continuation line re-carries its `> ` prefix(es) inside the span — skip
+    // them too, or the "URL" would resolve to the `>` byte.
+    while p < end {
+        match bytes[p as usize] {
+            b' ' | b'\t' | b'\r' => p += 1,
+            b'\n' => {
+                p += 1;
+                while let Some((_, after)) = one_quote_prefix(bytes, p, end) {
+                    p = after;
+                }
+            }
+            _ => break,
+        }
+    }
+    if p < end && bytes[p as usize] == b'<' {
+        let ds = p + 1;
+        let mut de = ds;
+        while de < end && bytes[de as usize] != b'>' {
+            de += 1;
+        }
+        return ByteRange::new(ds, de);
+    }
+    let ds = p;
+    let mut de = ds;
+    while de < end && !matches!(bytes[de as usize], b' ' | b'\t' | b'\n' | b'\r') {
+        de += 1;
+    }
+    ByteRange::new(ds, de)
+}
+
+/// True when a definition line carries a blockquote `>` prefix (scan the line
+/// head before `span.start`). Such defs render raw, matching the quoted
+/// thematic-break / table v1 rule.
+fn def_in_blockquote(text: &str, span: ByteRange) -> bool {
+    let bytes = text.as_bytes();
+    let mut ls = span.start;
+    while ls > 0 && bytes[ls as usize - 1] != b'\n' {
+        ls -= 1;
+    }
+    bytes[ls as usize..span.start as usize].contains(&b'>')
 }
 
 /// Wikilinks (`[[target]]` / `[[target|alias]]`, pulldown `ENABLE_WIKILINKS`).

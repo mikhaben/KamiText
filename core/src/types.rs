@@ -94,19 +94,27 @@ impl Kind {
 }
 
 bitflags! {
-    /// Toggleable GFM extensions. Default: all on.
+    /// Toggleable GFM extensions. Default: the v0 four (NOT `all()`).
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Extensions: u32 {
         const TABLES        = 1 << 0;
         const TASK_LISTS    = 1 << 1;
         const STRIKETHROUGH = 1 << 2;
         const WIKILINKS     = 1 << 3;
+        /// Structural fenced code (host OPT-IN, excluded from the default
+        /// set): the whole block gets one Block-scoped conceal marker — the
+        /// table model — so a host can draw a horizontally scrolling code
+        /// view in its place off-caret. A host without that view must NOT
+        /// enable this, or its code blocks render as blank space.
+        const STRUCTURAL_CODE = 1 << 4;
     }
 }
 
 impl Default for Extensions {
     fn default() -> Self {
-        Extensions::all()
+        // Deliberately NOT `all()`: `STRUCTURAL_CODE` requires a host-drawn
+        // replacement view and must stay opt-in per host.
+        Extensions::TABLES | Extensions::TASK_LISTS | Extensions::STRIKETHROUGH | Extensions::WIKILINKS
     }
 }
 

@@ -142,6 +142,17 @@ fn fixtures() -> Vec<Fixture> {
             ops: vec![Op::Selection(35, 35)],
         },
         Fixture {
+            // Reference links resolve their dest to the URL inside the matching
+            // definition below them (aux ⊄ element); each definition line
+            // conceals off-caret like a thematic break and reveals raw when the
+            // caret enters it. Second op parks the caret on the `[ref]:` line,
+            // revealing that def while `[shortcut]:` stays concealed.
+            name: "reference-links",
+            options: default_opts(),
+            text: "See [text][ref] and [shortcut].\n\n[ref]: https://example.com\n[shortcut]: https://ex.org\n",
+            ops: vec![Op::Selection(2, 2), Op::Selection(40, 40)],
+        },
+        Fixture {
             // Empty piped alias: the mid-typing state that makes pulldown
             // re-emit the paragraph tail inside the still-open link (the
             // reversed-marker regression). The node conceals whole.

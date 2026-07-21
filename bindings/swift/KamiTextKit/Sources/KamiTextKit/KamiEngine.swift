@@ -26,6 +26,12 @@ public final class KamiEngine {
         public static let taskLists = Extensions(rawValue: 1 << 1)
         public static let strikethrough = Extensions(rawValue: 1 << 2)
         public static let wikilinks = Extensions(rawValue: 1 << 3)
+        /// Structural fenced code (host OPT-IN, deliberately NOT in `.all`):
+        /// the whole block conceals off-caret behind one Block marker — the
+        /// table model — so the host can draw a horizontally scrolling code
+        /// view in its place. Only enable with that view implemented, or code
+        /// blocks render as blank space.
+        public static let structuralCode = Extensions(rawValue: 1 << 4)
         public static let all: Extensions = [.tables, .taskLists, .strikethrough, .wikilinks]
     }
 

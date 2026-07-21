@@ -934,6 +934,247 @@ fn single_char_reference_link_keeps_visible_label() {
     );
 }
 
+/// First resolved link element's dest range (reference-link tests).
+fn ref_dest(e: &Engine) -> ByteRange {
+    e.elements_in(ByteRange::new(0, e.len_bytes()))
+        .iter()
+        .find_map(|el| match el.kind {
+            ElementKind::Link { dest } => Some(dest),
+            _ => None,
+        })
+        .expect("a resolved reference link element")
+}
+
+#[test]
+fn reference_link_full_resolves_dest() {
+    // `[text][ref]` resolves to the URL byte range inside its definition — which
+    // sits AFTER the link element (aux ⊄ element, the contract shift in §2.2).
+    let src = "See [text][ref] here.\n\n[ref]: https://example.com\n";
+    let e = engine(src);
+    common::assert_invariants(&e);
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    let link = els
+        .iter()
+        .find(|el| matches!(el.kind, ElementKind::Link { .. }))
+        .expect("a resolved reference link element");
+    let ElementKind::Link { dest } = link.kind else { unreachable!() };
+    assert_eq!(&e.text()[dest.start as usize..dest.end as usize], "https://example.com");
+    assert!(dest.start >= link.range.end, "dest lives in the def, past the link: {link:?} {dest:?}");
+}
+
+#[test]
+fn reference_link_collapsed_and_shortcut_resolve() {
+    for src in [
+        "[ref][]\n\n[ref]: https://ex.com\n", // collapsed
+        "[ref]\n\n[ref]: https://ex.com\n",   // shortcut
+    ] {
+        let e = engine(src);
+        common::assert_invariants(&e);
+        let dest = ref_dest(&e);
+        assert_eq!(&e.text()[dest.start as usize..dest.end as usize], "https://ex.com", "src={src:?}");
+    }
+}
+
+#[test]
+fn reference_image_resolves_src() {
+    let e = engine("![alt][img]\n\n[img]: pic.png\n");
+    common::assert_invariants(&e);
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    let img = els
+        .iter()
+        .find(|el| matches!(el.kind, ElementKind::Image { .. }))
+        .expect("a resolved reference image element");
+    let ElementKind::Image { src } = img.kind else { unreachable!() };
+    assert_eq!(&e.text()[src.start as usize..src.end as usize], "pic.png");
+}
+
+#[test]
+fn undefined_reference_is_plain_text() {
+    // No definition, no broken-link callback → pulldown emits plain text; no
+    // Link element and nothing concealed.
+    let e = engine("[text][missing] and [alsomissing]\n");
+    common::assert_invariants(&e);
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    assert!(
+        els.iter().all(|el| !matches!(el.kind, ElementKind::Link { .. })),
+        "undefined references must not become links: {els:?}"
+    );
+}
+
+#[test]
+fn reference_definition_conceals_off_caret_reveals_on() {
+    // Def is line 0 (bytes 0..26), "text" is line 1.
+    let src = "[ref]: https://example.com\ntext\n";
+    let mut off = engine(src);
+    off.set_selection(ByteRange::new(28, 28)).unwrap(); // caret on "text"
+    common::assert_invariants(&off);
+    assert!(
+        segs(&off).iter().any(|s| s.starts_with("0..26 ") && s.contains("MARK") && s.contains("conc")),
+        "def concealed off-caret: {:?}",
+        segs(&off)
+    );
+    let mut on = engine(src);
+    on.set_selection(ByteRange::new(3, 3)).unwrap(); // caret inside the def line
+    assert!(
+        segs(&on).iter().any(|s| s.starts_with("0..26 ") && s.contains("MARK") && !s.contains("conc")),
+        "def revealed on-caret: {:?}",
+        segs(&on)
+    );
+}
+
+#[test]
+fn reference_def_url_excludes_brackets_and_title() {
+    let e1 = engine("[a][r]\n\n[r]: <https://ex.com>\n");
+    let d1 = ref_dest(&e1);
+    assert_eq!(&e1.text()[d1.start as usize..d1.end as usize], "https://ex.com");
+    let e2 = engine("[a][r]\n\n[r]: https://ex.com \"Title\"\n");
+    let d2 = ref_dest(&e2);
+    assert_eq!(&e2.text()[d2.start as usize..d2.end as usize], "https://ex.com");
+}
+
+#[test]
+fn reference_def_url_on_next_line_resolves() {
+    // CommonMark allows the destination on the line after the label.
+    let e = engine("[a][r]\n\n[r]:\nhttps://ex.com\n");
+    common::assert_invariants(&e);
+    let d = ref_dest(&e);
+    assert_eq!(&e.text()[d.start as usize..d.end as usize], "https://ex.com");
+}
+
+#[test]
+fn blockquoted_reference_def_stays_raw() {
+    // Same v1 rule as quoted rules/tables: a def behind `> ` is not concealed.
+    let mut e = engine("> [r]: https://ex.com\nx\n");
+    e.set_selection(ByteRange::new(22, 22)).unwrap(); // caret on "x", off the quote line
+    common::assert_invariants(&e);
+    assert!(
+        segs(&e).iter().any(|s| s.contains("QUOTE") && !s.contains("conc")),
+        "quoted def body stays visible: {:?}",
+        segs(&e)
+    );
+}
+
+#[test]
+fn reference_link_case_insensitive_label() {
+    let e = engine("[Text][Foo]\n\n[FOO]: https://ex.com\n");
+    common::assert_invariants(&e);
+    let dest = ref_dest(&e);
+    assert_eq!(&e.text()[dest.start as usize..dest.end as usize], "https://ex.com");
+}
+
+#[test]
+fn reference_link_unicode_case_fold() {
+    // Non-ASCII labels differing only in case must resolve — pulldown folds
+    // with UniCase, and our lookup uses the same type (an ASCII fold left the
+    // link resolved-but-dest-empty).
+    let e = engine("[t][Ссылка]\n\n[ссылка]: https://ex.com\n");
+    common::assert_invariants(&e);
+    let dest = ref_dest(&e);
+    assert_eq!(&e.text()[dest.start as usize..dest.end as usize], "https://ex.com");
+}
+
+#[test]
+fn quoted_reference_def_url_on_next_line_resolves() {
+    // A def inside a blockquote with its destination on the continuation line:
+    // the span covers both lines INCLUDING the interior `> ` prefix, which the
+    // URL scan must skip.
+    let e = engine("[a][r]\n\n> [r]:\n> https://ex.com\n");
+    common::assert_invariants(&e);
+    let dest = ref_dest(&e);
+    assert_eq!(&e.text()[dest.start as usize..dest.end as usize], "https://ex.com");
+}
+
+#[test]
+fn duplicate_label_first_def_wins_second_stays_raw() {
+    // CommonMark: first definition wins. pulldown's RefDefs keeps only the
+    // first span, so the FIRST def line conceals and the duplicate renders raw
+    // (documented v1 limitation) — and the link resolves to the FIRST URL.
+    let src = "[a][r]\n\n[r]: https://first.com\n[r]: https://second.com\n";
+    let mut e = engine(src);
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    let dest = ref_dest(&e);
+    assert_eq!(&e.text()[dest.start as usize..dest.end as usize], "https://first.com");
+    let all = segs(&e);
+    // First def line (bytes 8..30) concealed; duplicate (31..54) raw body.
+    assert!(
+        all.iter().any(|s| s.starts_with("8..") && s.contains("MARK") && s.contains("conc")),
+        "first def conceals: {all:?}"
+    );
+    // The duplicate's bytes coalesce with the preceding newline into one
+    // unconcealed BODY segment (30..55).
+    assert!(
+        all.iter().any(|s| s.starts_with("30..") && s.contains("BODY") && !s.contains("conc")),
+        "duplicate def stays raw body: {all:?}"
+    );
+}
+
+/// Engine with the host-opt-in structural-code extension enabled.
+fn structural_engine(text: &str) -> Engine {
+    Engine::new(
+        text,
+        EngineOptions {
+            extensions: Extensions::default() | Extensions::STRUCTURAL_CODE,
+            ..EngineOptions::default()
+        },
+    )
+}
+
+#[test]
+fn structural_code_conceals_off_caret_reveals_on() {
+    // Whole block (fences + info + body) = ONE Block marker, the table model.
+    let src = "```rust\nlet x = 1;\n```\nx\n";
+    let mut off = structural_engine(src);
+    off.set_selection(ByteRange::new(23, 23)).unwrap(); // caret on the tail "x"
+    common::assert_invariants(&off);
+    assert!(
+        segs(&off).iter().any(|s| s.starts_with("0..22 ") && s.contains("CODEBLOCK") && s.contains("MARK") && s.contains("conc")),
+        "structural block concealed off-caret: {:?}",
+        segs(&off)
+    );
+    let mut on = structural_engine(src);
+    on.set_selection(ByteRange::new(10, 10)).unwrap(); // caret inside the body
+    assert!(
+        segs(&on).iter().any(|s| s.starts_with("0..22 ") && s.contains("CODEBLOCK") && !s.contains("conc")),
+        "structural block revealed on-caret: {:?}",
+        segs(&on)
+    );
+    // The Fence element (and its info range) survives for the host overlay.
+    let els = on.elements_in(ByteRange::new(0, on.len_bytes()));
+    assert!(
+        els.iter().any(|el| matches!(el.kind, ElementKind::Fence { info } if &src[info.start as usize..info.end as usize] == "rust")),
+        "fence element with info intact: {els:?}"
+    );
+}
+
+#[test]
+fn structural_code_quoted_block_keeps_fence_markers() {
+    // Inside a blockquote the structural marker would overlap the per-line
+    // `> ` markers — quoted fences keep the v0 fence-marker rendering.
+    let mut e = structural_engine("> ```\n> x\n> ```\nz\n");
+    e.set_selection(ByteRange::new(16, 16)).unwrap(); // caret on "z"
+    common::assert_invariants(&e);
+    assert!(
+        segs(&e).iter().any(|s| s.contains("CODEBLOCK") && !s.contains("MARK") && !s.contains("conc")),
+        "quoted body stays visible code: {:?}",
+        segs(&e)
+    );
+}
+
+#[test]
+fn default_options_keep_fence_markers() {
+    // The extension is OPT-IN: default engines keep the v0 per-fence markers
+    // and a visible body (pins that mac stays unaffected).
+    let mut e = engine("```rust\nlet x = 1;\n```\nx\n");
+    e.set_selection(ByteRange::new(23, 23)).unwrap();
+    common::assert_invariants(&e);
+    let all = segs(&e);
+    assert!(
+        all.iter().any(|s| s.contains("CODEBLOCK") && !s.contains("MARK") && !s.contains("conc")),
+        "default body stays visible: {all:?}"
+    );
+}
+
 #[test]
 fn quoted_thematic_break_stays_raw() {
     // v1 rule, same as quoted tables: inside a blockquote the rule emits no

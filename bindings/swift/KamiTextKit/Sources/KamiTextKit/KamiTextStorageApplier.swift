@@ -52,12 +52,35 @@ public struct KamiTextStorageApplier {
     public func apply(_ patch: KamiPatch, engine: KamiEngine, to storage: NSTextStorage) throws(KamiEngineError) {
         for range in patch.dirty {
             var applyRange = range
-            var elements = try engine.elements(in: range)
-            for element in elements where element.kind == .task && intersects(element.range, range) {
+            // Paragraph widening: the hanging-indent pass keys off a paragraph's
+            // LIST MARKER segment, but an edit can dirty only a body run that
+            // shares the paragraph (e.g. the nested item's leading whitespace) —
+            // the per-segment reset would then wipe the paragraph style at its
+            // first character (paragraph fixing propagates it) while the marker
+            // never re-enters the pass, losing the indent with no self-heal.
+            // Widening every dirty range to whole paragraphs guarantees the
+            // marker segment is always present alongside any dirtied byte of
+            // its paragraph. (Storage is already post-edit here, so its UTF-16
+            // offsets align with the engine's.)
+            if let u16Start = try? engine.byteToUtf16(range.lowerBound),
+               let u16End = try? engine.byteToUtf16(range.upperBound) {
+                let ns = storage.mutableString
+                let location = Swift.min(Int(u16Start), ns.length)
+                let length = Swift.max(0, Swift.min(Int(u16End), ns.length) - location)
+                let para = ns.paragraphRange(for: NSRange(location: location, length: length))
+                if let byteStart = try? engine.utf16ToByte(UInt32(para.location)),
+                   let byteEnd = try? engine.utf16ToByte(UInt32(NSMaxRange(para))) {
+                    applyRange = Swift.min(applyRange.lowerBound, byteStart)
+                        ..< Swift.max(applyRange.upperBound, byteEnd)
+                }
+            }
+            var elements = try engine.elements(in: applyRange)
+            let beforeTaskWiden = applyRange
+            for element in elements where element.kind == .task && intersects(element.range, applyRange) {
                 applyRange = Swift.min(applyRange.lowerBound, element.range.lowerBound)
                     ..< Swift.max(applyRange.upperBound, element.range.upperBound)
             }
-            if applyRange != range {
+            if applyRange != beforeTaskWiden {
                 elements = try engine.elements(in: applyRange)
             }
             let segments = try engine.segments(in: applyRange)
@@ -91,7 +114,67 @@ public struct KamiTextStorageApplier {
         for element in elements where element.kind == .task && element.checked {
             overlayCheckedTask(element, segments: segments, in: storage, length: length)
         }
+        applyListHangingIndents(segments: segments, to: storage, length: length)
         storage.endEditing()
+    }
+
+    /// Sets each bullet/ordinal list paragraph's `headIndent` to the rendered
+    /// width of its visible prefix (leading whitespace + marker + trailing
+    /// space), so soft-wrapped continuation lines hang under the item text.
+    /// `firstLineHeadIndent` stays 0 — the marker and any nesting whitespace
+    /// are real glyphs on line 1. The value is set ABSOLUTELY, not as a delta:
+    /// the per-segment pass just above reset these paragraphs to `listStyle`
+    /// (headIndent 0), so this is idempotent and self-healing — a paragraph
+    /// that stops being a list is re-styled to `bodyStyle` (headIndent 0) by
+    /// that same pass, no sentinel needed. Task paragraphs carry `.taskMarker`
+    /// (not `.listBullet`/`.listOrdinal`) and so are never touched; quoted
+    /// lists keep `quoteStyle` via the `.blockquote` guard.
+    private func applyListHangingIndents(segments: [KamiSegment], to storage: NSMutableAttributedString, length: Int) {
+        // Most applies carry no list segments at all — skip before bridging.
+        guard segments.contains(where: { $0.kinds.contains(.listBullet) || $0.kinds.contains(.listOrdinal) }) else { return }
+        // Live proxy, unlike `string as NSString` which can copy the whole
+        // backing store on every apply.
+        let ns = storage.mutableString
+        for segment in segments {
+            guard segment.kinds.contains(.listBullet) || segment.kinds.contains(.listOrdinal),
+                  !segment.kinds.contains(.blockquote),
+                  let marker = nsRange(segment.utf16Range, clampedTo: length),
+                  marker.length > 0 else { continue }
+            let para = ns.paragraphRange(for: marker)
+            // Advance past the marker's trailing spaces/tabs to the item text.
+            var content = NSMaxRange(marker)
+            while content < NSMaxRange(para),
+                  ns.character(at: content) == 0x20 || ns.character(at: content) == 0x09 {
+                content += 1
+            }
+            let prefixLen = content - para.location
+            guard prefixLen > 0 else { continue }
+            // Prefix widths repeat massively ("- ", "1. ", "  - "…) and the
+            // theme is applier-immutable, so memoize by the prefix STRING —
+            // collapsing a list-heavy seed's thousands of CoreText size()
+            // calls to a handful. Fonts for a given prefix are deterministic
+            // per theme (bullets never conceal; leading whitespace is body).
+            let prefixRange = NSRange(location: para.location, length: prefixLen)
+            let prefixString = ns.substring(with: prefixRange)
+            let width: CGFloat
+            if let cached = memo.listPrefixWidth[prefixString] {
+                width = cached
+            } else {
+                width = storage.attributedSubstring(from: prefixRange).size().width
+                if memo.listPrefixWidth.count >= 256 { memo.listPrefixWidth.removeAll(keepingCapacity: true) }
+                memo.listPrefixWidth[prefixString] = width
+            }
+            // Base from the PARAGRAPH's first unit (not the marker): a host
+            // pass may have inflated fields there (reserve spacing); copying
+            // from it preserves them instead of silently reverting the whole
+            // paragraph to the theme instance.
+            let base = (storage.attribute(.paragraphStyle, at: para.location, effectiveRange: nil)
+                as? NSParagraphStyle) ?? NSParagraphStyle()
+            guard abs(base.headIndent - width) > 0.5 else { continue } // idempotent no-op
+            let mutable = base.mutableCopy() as! NSMutableParagraphStyle
+            mutable.headIndent = width // firstLineHeadIndent stays 0
+            storage.addAttribute(.paragraphStyle, value: mutable.copy(), range: para)
+        }
     }
 
     /// Layers strikethrough + dimmed color onto the content (non-marker)
@@ -147,6 +230,9 @@ public struct KamiTextStorageApplier {
 private final class AttributeMemo {
     var segment: [UInt64: [NSAttributedString.Key: Any]] = [:]
     var checkedTaskOverlay: [NSAttributedString.Key: Any]?
+    /// List-prefix rendered widths ("- ", "1. ", "  - "…) — see
+    /// `applyListHangingIndents`. Bounded; cleared wholesale on overflow.
+    var listPrefixWidth: [String: CGFloat] = [:]
 }
 
 /// Mirrors core's `ByteRange::intersects` (core/src/types.rs:31-40) exactly:

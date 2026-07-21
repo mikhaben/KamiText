@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "reference-links",
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
+  "text": "See [text][ref] and [shortcut].\n\n[ref]: https://example.com\n[shortcut]: https://ex.org\n",
+  "ops": [
+    {"type":"selection","start":2,"end":2},
+    {"type":"selection","start":40,"end":40}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]},
+      {"dirty":[{"start":4,"end":5,"utf16Start":4,"utf16End":5},{"start":9,"end":15,"utf16Start":9,"utf16End":15},{"start":20,"end":21,"utf16Start":20,"utf16End":21},{"start":29,"end":30,"utf16Start":29,"utf16End":30},{"start":33,"end":59,"utf16Start":33,"utf16End":59}]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":4,"utf16Start":0,"utf16End":4},"kinds":["body"],"concealed":false},
+      {"range":{"start":4,"end":5,"utf16Start":4,"utf16End":5},"kinds":["marker"],"concealed":true},
+      {"range":{"start":5,"end":9,"utf16Start":5,"utf16End":9},"kinds":["link"],"concealed":false},
+      {"range":{"start":9,"end":15,"utf16Start":9,"utf16End":15},"kinds":["marker"],"concealed":true},
+      {"range":{"start":15,"end":20,"utf16Start":15,"utf16End":20},"kinds":["body"],"concealed":false},
+      {"range":{"start":20,"end":21,"utf16Start":20,"utf16End":21},"kinds":["marker"],"concealed":true},
+      {"range":{"start":21,"end":29,"utf16Start":21,"utf16End":29},"kinds":["link"],"concealed":false},
+      {"range":{"start":29,"end":30,"utf16Start":29,"utf16End":30},"kinds":["marker"],"concealed":true},
+      {"range":{"start":30,"end":33,"utf16Start":30,"utf16End":33},"kinds":["body"],"concealed":false},
+      {"range":{"start":33,"end":59,"utf16Start":33,"utf16End":59},"kinds":["marker"],"concealed":false},
+      {"range":{"start":59,"end":60,"utf16Start":59,"utf16End":60},"kinds":["body"],"concealed":false},
+      {"range":{"start":60,"end":86,"utf16Start":60,"utf16End":86},"kinds":["marker"],"concealed":true},
+      {"range":{"start":86,"end":87,"utf16Start":86,"utf16End":87},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [
+      {"id":0,"range":{"start":4,"end":15,"utf16Start":4,"utf16End":15},"kind":"link","dest":{"start":40,"end":59,"utf16Start":40,"utf16End":59}},
+      {"id":1,"range":{"start":20,"end":30,"utf16Start":20,"utf16End":30},"kind":"link","dest":{"start":72,"end":86,"utf16Start":72,"utf16End":86}}
+    ],
+    "text": "See [text][ref] and [shortcut].\n\n[ref]: https://example.com\n[shortcut]: https://ex.org\n",
+    "lenBytes": 87,
+    "lenUtf16": 87
+  }
+}
