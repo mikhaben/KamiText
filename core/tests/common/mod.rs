@@ -49,7 +49,20 @@ pub const ATOMS: &[&str] = &[
     // Wikilinks, incl. the empty-alias mid-typing state that makes pulldown
     // 0.13 re-emit the paragraph tail inside the still-open link.
     "[[w]]", "[[t|al]]", "[[t|]]",
+    // `![[…]]` embeds arrive as images, not links — a separate parse path the
+    // wikilink atoms above never reach.
+    "![[w]]", "![[t|al]]", "![[t|]]",
 ];
+
+/// Inputs that make pulldown-cmark 0.13.4 panic inside `handle_wikilink`
+/// (a reversed slice), which `parse`'s guard degrades to plain text. Held
+/// apart from `ATOMS` on purpose: the guard RE-PANICS in debug builds by
+/// design, and every generative suite runs debug, so folding these into the
+/// random corpus would fail the suites rather than exercise the recovery.
+/// The goldens sweep this list explicitly instead, asserting loud propagation
+/// in debug and full plain-text recovery under `cargo test --release`.
+pub const PULLDOWN_PANIC_ATOMS: &[&str] =
+    &["![[]a]()]]", "![[]|]()]]", "![[] ]()]]", "![[]*]()]]"];
 
 /// xorshift64* — deterministic, dependency-free PRNG. `pseudo_fuzz.rs` keeps
 /// its own copy of this generator because half its ops are deliberately

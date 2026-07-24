@@ -14,7 +14,7 @@ fn new_engine(text: &str) -> *mut KamiEngine {
 
 #[test]
 fn abi_version_reported() {
-    assert_eq!(kami_abi_version(), 3);
+    assert_eq!(kami_abi_version(), 4);
 }
 
 #[test]

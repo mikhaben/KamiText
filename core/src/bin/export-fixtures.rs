@@ -142,6 +142,27 @@ fn fixtures() -> Vec<Fixture> {
             ops: vec![Op::Selection(35, 35)],
         },
         Fixture {
+            // Obsidian `![[file.png]]` attachment embeds: parse as Image
+            // elements whose src is the bare target (plain + piped forms), with
+            // `![[`/`]]` concealed off-caret. Caret parked on the tail line.
+            name: "wiki-image-embed",
+            options: default_opts(),
+            text: "![[file.png]]\n![[photo.png|caption]]\ntail\n",
+            ops: vec![Op::Selection(40, 40)],
+        },
+        Fixture {
+            // Both image syntaxes in one document, so a replaying adapter has
+            // to discriminate rather than pattern-match the `![[` opener: the
+            // second line is ONE CommonMark image whose alt text starts with
+            // `[`, and its `wiki` flag must be false while the first line's is
+            // true. Their srcs are byte-identical, so only the flag tells them
+            // apart — and it decides percent-decoding and resizability.
+            name: "wiki-vs-commonmark-image",
+            options: default_opts(),
+            text: "![[a%20b.png]]\n![[bracketed] alt](a%20b.png)\ntail\n",
+            ops: vec![Op::Selection(48, 48)],
+        },
+        Fixture {
             // Reference links resolve their dest to the URL inside the matching
             // definition below them (aux ⊄ element); each definition line
             // conceals off-caret like a thematic break and reveals raw when the
@@ -469,9 +490,10 @@ fn export(f: &Fixture) -> String {
                 out.push_str(",\"kind\":\"link\",\"dest\":");
                 range_obj(&e, dest, &mut out);
             }
-            ElementKind::Image { src } => {
+            ElementKind::Image { src, wiki } => {
                 out.push_str(",\"kind\":\"image\",\"src\":");
                 range_obj(&e, src, &mut out);
+                let _ = write!(out, ",\"wiki\":{}", if wiki { "true" } else { "false" });
             }
             ElementKind::Fence { info } => {
                 out.push_str(",\"kind\":\"fence\",\"info\":");

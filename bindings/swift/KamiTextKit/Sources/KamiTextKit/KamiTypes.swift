@@ -86,6 +86,11 @@ public struct KamiElement: Sendable, Equatable {
     /// Heading level 1–6 (the C 'checked' byte); 0 for non-headings.
     public let level: UInt8
     public let auxRange: Range<UInt32>
+    /// `.image` only: the source syntax was an Obsidian `![[…]]` embed rather
+    /// than a CommonMark `![](…)`, so `auxRange` is a literal vault path (no
+    /// percent decoding) and a `#` in it is not a resize fragment.
+    /// `false` for every other kind.
+    public let wikiEmbed: Bool
 }
 
 /// The set of byte ranges whose segments changed after a mutating call.

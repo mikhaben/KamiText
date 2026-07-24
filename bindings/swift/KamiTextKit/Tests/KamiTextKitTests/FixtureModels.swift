@@ -1,9 +1,8 @@
 @testable import KamiTextKit
 
 /// Decodable mirror of the `fixtures/*.json` schema. Only the
-/// fields Gate 2 needs (segments-only conformance) are modeled; unused JSON
-/// keys (`schema`, `expect.patches`, `expect.elements`) are simply ignored by
-/// `JSONDecoder`.
+/// fields the conformance replay asserts are modeled; unused JSON keys
+/// (`schema`, `expect.patches`) are simply ignored by `JSONDecoder`.
 struct Fixture: Decodable {
     let name: String
     let options: FixtureOptions
@@ -44,9 +43,69 @@ enum FixtureOp: Decodable {
 
 struct FixtureExpect: Decodable {
     let segments: [FixtureSegment]
+    let elements: [FixtureElement]
     let text: String
     let lenBytes: UInt32
     let lenUtf16: UInt32
+}
+
+/// One `expect.elements` entry. The JSON is a discriminated union whose
+/// payload key name differs per `kind`, so the payload is an enum decoded by
+/// switching on that string: a flat all-optional struct would accept an
+/// `image` carrying a `dest` without complaint.
+struct FixtureElement {
+    let id: UInt32
+    let range: FixtureRange
+    let payload: Payload
+
+    enum Payload {
+        case task(checked: Bool)
+        case link(dest: FixtureRange)
+        case image(src: FixtureRange, wiki: Bool)
+        case fence(info: FixtureRange)
+        case wikilink(target: FixtureRange)
+        case heading(level: UInt8, text: FixtureRange)
+    }
+}
+
+extension FixtureElement: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case id, range, kind, checked, dest, src, wiki, info, target, level, text
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UInt32.self, forKey: .id)
+        range = try container.decode(FixtureRange.self, forKey: .range)
+        let kind = try container.decode(String.self, forKey: .kind)
+        switch kind {
+        case "task":
+            payload = .task(checked: try container.decode(Bool.self, forKey: .checked))
+        case "link":
+            payload = .link(dest: try container.decode(FixtureRange.self, forKey: .dest))
+        case "image":
+            payload = .image(
+                src: try container.decode(FixtureRange.self, forKey: .src),
+                wiki: try container.decode(Bool.self, forKey: .wiki)
+            )
+        case "fence":
+            payload = .fence(info: try container.decode(FixtureRange.self, forKey: .info))
+        case "wikilink":
+            payload = .wikilink(target: try container.decode(FixtureRange.self, forKey: .target))
+        case "heading":
+            payload = .heading(
+                level: try container.decode(UInt8.self, forKey: .level),
+                text: try container.decode(FixtureRange.self, forKey: .text)
+            )
+        default:
+            // A kind the mirror can't model is drift between the Rust core and
+            // this suite — exactly what the fixture gate exists to catch, so it
+            // fails loudly instead of being skipped.
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind, in: container, debugDescription: "unknown element kind \(kind)"
+            )
+        }
+    }
 }
 
 struct FixtureSegment: Decodable {

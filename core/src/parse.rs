@@ -20,6 +20,7 @@
 
 use crate::types::{ByteRange, Element, ElementKind, Extensions, Kind, MarkerScope};
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag};
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 use unicase::UniCase;
 
 /// A content-kind paint: adds `kind` to every byte in `range`. Never concealed.
@@ -90,8 +91,9 @@ enum NodeKind {
     Strong,
     Strikethrough,
     Link { reference: Option<String> },
-    WikiLink { has_pothole: bool },
+    WikiLink { has_pothole: bool, dest_len: u32 },
     Image { reference: Option<String> },
+    WikiImage { has_pothole: bool, dest_len: u32 },
     Table,
     HtmlBlock,
     Other,
@@ -135,7 +137,54 @@ impl Frame {
     }
 }
 
+/// Parses `text` into `out`, degrading to unstyled plain text if the pulldown
+/// walk panics.
+///
+/// pulldown-cmark 0.13.4 panics on inputs a user reaches by typing — the
+/// `![[…]]` embed shapes `![[]a]()]]`, `![[]|]()]]`, `![[] ]()]]`, `![[]*]()]]`
+/// drive `handle_wikilink` into a reversed slice (its own start past its end).
+/// 0.13.4 is the newest release, so there is no version to move to. Unguarded,
+/// the unwind reaches the C ABI, which poisons the engine: one keystroke ends
+/// the editing session until the app restarts.
+///
+/// Recovery is sound here because `parse` is a pure function of
+/// `(text, extensions)` and Rust unwinding is memory-safe: a half-filled
+/// `ParseOut` is STALE, not corrupt, so clearing it restores a fully defined
+/// state — bit-for-bit the arena a markup-free document produces, which
+/// downstream already covers (`flatten` emits one plain covering segment).
+/// Poisoning stays the right answer where post-panic state is *unknown*; this
+/// state is known, so one document losing its styling beats losing the session.
+///
+/// DEBUG BUILDS RE-PANIC, deliberately, so kami's own parser bugs keep failing
+/// loudly instead of degrading into plain text. Mind the reach: only `cargo
+/// test` and `cargo run` are debug here — `build-xcframework.sh` compiles
+/// `--release`, so every Swift host (both apps and `KamiDemoMac`) links a
+/// release core and recovers quietly even from a Swift Debug build. The Rust
+/// suite is the gate that keeps this honest. Without the re-panic the guard
+/// would be a trap swallowing every future defect in the walk — a worse bug
+/// than the one it fixes.
 pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
+    // `&mut ParseOut` is not `UnwindSafe`; asserting it is sound *because* the
+    // catch arm resets the arena, so no caller can observe a partial parse.
+    // The debug arm re-panics WITHOUT clearing, so an embedder that catches
+    // that unwind itself would observe a half-filled arena. The FFI never does
+    // — it poisons the cell or drops the engine — but a future Rust embedder
+    // must reseed rather than reuse the `Engine`.
+    match catch_unwind(AssertUnwindSafe(|| walk(text, extensions, out))) {
+        Ok(()) => {}
+        Err(payload) => {
+            if cfg!(debug_assertions) {
+                resume_unwind(payload);
+            }
+            out.clear();
+        }
+    }
+}
+
+/// The pulldown walk itself — everything `parse`'s guard covers, and nothing
+/// else. Kept separate so the catch cannot creep outward over engine work that
+/// has no plain-text fallback.
+fn walk(text: &str, extensions: Extensions, out: &mut ParseOut) {
     out.clear();
     let mut opts = Options::empty();
     if extensions.contains(Extensions::TABLES) {
@@ -218,11 +267,14 @@ pub fn parse(text: &str, extensions: Extensions, out: &mut ParseOut) {
                     Tag::Emphasis => NodeKind::Emphasis,
                     Tag::Strong => NodeKind::Strong,
                     Tag::Strikethrough => NodeKind::Strikethrough,
-                    Tag::Link { link_type: LinkType::WikiLink { has_pothole }, .. } => {
-                        NodeKind::WikiLink { has_pothole }
+                    Tag::Link { link_type: LinkType::WikiLink { has_pothole }, dest_url, .. } => {
+                        NodeKind::WikiLink { has_pothole, dest_len: dest_url.len() as u32 }
                     }
                     Tag::Link { link_type, id, .. } => {
                         NodeKind::Link { reference: reference_id(link_type, id.as_ref()) }
+                    }
+                    Tag::Image { link_type: LinkType::WikiLink { has_pothole }, dest_url, .. } => {
+                        NodeKind::WikiImage { has_pothole, dest_len: dest_url.len() as u32 }
                     }
                     Tag::Image { link_type, id, .. } => {
                         NodeKind::Image { reference: reference_id(link_type, id.as_ref()) }
@@ -470,8 +522,13 @@ fn finish_node(
         NodeKind::Strong => inline_span(&frame, Kind::STRONG, out),
         NodeKind::Strikethrough => inline_span(&frame, Kind::STRIKETHROUGH, out),
         NodeKind::Link { .. } => link_or_image(text, &frame, def_urls, out, false),
-        NodeKind::WikiLink { has_pothole } => wikilink(text, &frame, out, has_pothole),
+        NodeKind::WikiLink { has_pothole, dest_len } => {
+            wikilink(text, &frame, out, has_pothole, dest_len)
+        }
         NodeKind::Image { .. } => link_or_image(text, &frame, def_urls, out, true),
+        NodeKind::WikiImage { has_pothole, dest_len } => {
+            wiki_image(text, &frame, out, has_pothole, dest_len)
+        }
         NodeKind::Table => {
             let table = trim_trailing_newline(text, r);
             out.paints.push(Paint {
@@ -924,7 +981,7 @@ fn link_or_image(
         id: 0,
         range: r,
         kind: if image {
-            ElementKind::Image { src: dest }
+            ElementKind::Image { src: dest, wiki: false }
         } else {
             ElementKind::Link { dest }
         },
@@ -1072,9 +1129,9 @@ fn def_in_blockquote(text: &str, span: ByteRange) -> bool {
 /// technique therefore paints the concealed runs for free: `[[` (plus
 /// `target|` when piped) becomes the lead marker, `]]` the trail marker, and
 /// the child span is the visible `LINK` body. Only the element's `target`
-/// needs a dedicated scan: pulldown's `dest_url` is an owned `CowStr` with no
-/// source offsets.
-fn wikilink(text: &str, frame: &Frame, out: &mut ParseOut, has_pothole: bool) {
+/// needs deriving: pulldown's `dest_url` is an owned `CowStr` with no source
+/// offsets.
+fn wikilink(text: &str, frame: &Frame, out: &mut ParseOut, has_pothole: bool, dest_len: u32) {
     let r = frame.range;
     if paint_table_body(frame, Kind::LINK, out) {
         return;
@@ -1097,7 +1154,7 @@ fn wikilink(text: &str, frame: &Frame, out: &mut ParseOut, has_pothole: bool) {
         None => push_marker(out, r, Kind::MARKER, r, MarkerScope::Inline),
     }
 
-    let target = scan_wikilink_target(text, r, has_pothole);
+    let target = wikilink_target(text, frame, has_pothole, dest_len, 2);
     out.elements.push(Element {
         id: 0,
         range: r,
@@ -1105,24 +1162,89 @@ fn wikilink(text: &str, frame: &Frame, out: &mut ParseOut, has_pothole: bool) {
     });
 }
 
-/// Locates the wikilink target range: the raw bytes between `[[` and the first
-/// literal `|` (piped form), or between `[[` and `]]` (plain form). Mirrors
-/// pulldown's `scan_wikilink_pipe`, which splits on the first *raw* `|` with no
-/// unescaping — so `[[a\|b|c]]` targets `a\` (probed). The node always has the
-/// shape `[[…]]` with a non-empty name here (pulldown never emits a wikilink
-/// otherwise), so `node.len() >= 5` and the `+2 / -2` never cross or underflow.
-fn scan_wikilink_target(text: &str, node: ByteRange, has_pothole: bool) -> ByteRange {
-    let start = node.start + 2; // past the opening `[[`
-    let inner_end = node.end - 2; // before the closing `]]`
-    if has_pothole {
-        let bytes = text.as_bytes();
-        let mut p = start;
-        while p < inner_end && bytes[p as usize] != b'|' {
-            p += 1;
+/// Wikilink image embeds (`![[file.png]]` / `![[file.png|alias]]`, Obsidian
+/// attachments). Structurally a wikilink whose element is an image: pulldown
+/// emits it via `Tag::Image` with `LinkType::WikiLink`, so `scan_dest` (which
+/// only reads `[t](dest)` / `<autolink>`) would return an empty src and the
+/// host could never resolve the file. Marker/conceal mirror `wikilink` (`![[`
+/// plus a piped `target|` lead, `]]` trail, visible body = the child span); the
+/// body paints `IMAGE` so the alt line renders like a markdown embed, and the
+/// element carries the bare target as `src` for the host to resolve against
+/// the vault.
+fn wiki_image(text: &str, frame: &Frame, out: &mut ParseOut, has_pothole: bool, dest_len: u32) {
+    let r = frame.range;
+    if paint_table_body(frame, Kind::IMAGE, out) {
+        return;
+    }
+    match frame.child_span() {
+        // Empty piped alias (`![[a|]]`): pulldown re-classifies the closing
+        // `]]` as Text children — conceal the whole node, the element below
+        // still carries the target so resolution works mid-typing.
+        Some(c) if c.start >= r.end.saturating_sub(2) => {
+            push_marker(out, r, Kind::MARKER, r, MarkerScope::Inline);
         }
-        ByteRange::new(start, p)
-    } else {
-        ByteRange::new(start, inner_end)
+        Some(c) => {
+            push_marker(out, ByteRange::new(r.start, c.start), Kind::MARKER, r, MarkerScope::Inline);
+            push_marker(out, ByteRange::new(c.end, r.end), Kind::MARKER, r, MarkerScope::Inline);
+            out.paints.push(Paint { range: c, kind: Kind::IMAGE });
+        }
+        None => push_marker(out, r, Kind::MARKER, r, MarkerScope::Inline),
+    }
+
+    let src = wikilink_target(text, frame, has_pothole, dest_len, 3);
+    out.elements.push(Element {
+        id: 0,
+        range: r,
+        kind: ElementKind::Image { src, wiki: true },
+    });
+}
+
+/// Locates the wikilink target range. pulldown's `dest_url` is an owned
+/// `CowStr` with no source offsets, but it is a verbatim borrow of the target
+/// run, so `dest_len` pins the range once one end is anchored — and the child
+/// span anchors it. Plain form: pulldown builds the body node *from* the
+/// target run, so the child span is the target. Piped form: pulldown restarts
+/// the body one byte past the `|` it split on (the first *raw* one, with no
+/// unescaping — so `[[a\|b|c]]` targets `a\`), so the target is the `dest_len`
+/// bytes ending just before the visible alias.
+///
+/// Anchoring is not the same as counting `opener` bytes from the node start:
+/// pulldown resumes the run after the *last* doubled `]]` the body swallows,
+/// so `![[[a]]b]]` targets `b`, not the `[a]]b` that starts right after `![[`.
+///
+/// `opener` — the marker byte width, `2` for `[[…]]` and `3` for `![[…]]` —
+/// only feeds the body-less fallback, which has no child span to anchor to.
+fn wikilink_target(
+    text: &str,
+    frame: &Frame,
+    has_pothole: bool,
+    dest_len: u32,
+    opener: u32,
+) -> ByteRange {
+    match frame.child_span() {
+        Some(c) if has_pothole => {
+            let pipe = c.start.saturating_sub(1);
+            ByteRange::new(pipe.saturating_sub(dest_len), pipe)
+        }
+        Some(c) => c,
+        // Body-less (empty wikiname never parses; kept as a defensive arm).
+        // The node always has the shape `[[…]]` with a non-empty name here, so
+        // `node.len() >= 5` and the `+opener / -2` never cross or underflow.
+        None => {
+            let node = frame.range;
+            let start = node.start + opener;
+            let inner_end = node.end - 2;
+            if has_pothole {
+                let bytes = text.as_bytes();
+                let mut p = start;
+                while p < inner_end && bytes[p as usize] != b'|' {
+                    p += 1;
+                }
+                ByteRange::new(start, p)
+            } else {
+                ByteRange::new(start, inner_end)
+            }
+        }
     }
 }
 

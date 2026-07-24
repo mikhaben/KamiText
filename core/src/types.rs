@@ -167,7 +167,10 @@ pub struct Segment {
 pub enum ElementKind {
     Task { checked: bool },
     Link { dest: ByteRange },
-    Image { src: ByteRange },
+    /// `wiki` distinguishes an Obsidian `![[…]]` embed from a CommonMark
+    /// `![](…)` image: the former's `src` is a literal vault path (no percent
+    /// decoding) and a `#` in it is not a resize fragment.
+    Image { src: ByteRange, wiki: bool },
     Fence { info: ByteRange },
     WikiLink { target: ByteRange },
     /// ATX (1–6) or setext (1–2) heading. `text` is the title content net of

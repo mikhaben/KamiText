@@ -19,7 +19,7 @@
 #include <stdlib.h>
 
 // ABI version. Bumped on any breaking layout or semantic change.
-#define KAMI_ABI_VERSION 3
+#define KAMI_ABI_VERSION 4
 
 #define KAMI_OK 0
 
@@ -49,6 +49,12 @@
 #define KAMI_ELEMENT_WIKILINK 4
 
 #define KAMI_ELEMENT_HEADING 5
+
+// `KamiElement.flags` bit 0: this image came from Obsidian `![[…]]` embed
+// syntax rather than CommonMark `![](…)`. Hosts use it to decide percent
+// decoding (a wiki target is a literal vault path) and resizability (a `#`
+// fragment means something else inside `[[…]]`).
+#define KAMI_ELEMENT_FLAG_WIKI 1
 
 // Opaque engine handle (Rustonomicon opaque-struct pattern). Only ever used
 // behind a pointer; cbindgen emits a bare forward declaration.
@@ -98,7 +104,9 @@ typedef struct KamiElement {
   uint32_t kind;
   // Task: 1 = checked. Heading: level 1–6. Other kinds: 0.
   uint8_t checked;
-  uint8_t _pad[3];
+  // KAMI_ELEMENT_FLAG_* bit set. 0 for every kind that defines no flag.
+  uint8_t flags;
+  uint8_t _pad[2];
   // Link dest / image src / fence info / wikilink target / heading text
   // byte range; 0-width when absent.
   uint32_t aux_start;

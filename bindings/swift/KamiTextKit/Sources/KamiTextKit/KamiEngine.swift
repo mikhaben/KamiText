@@ -192,7 +192,8 @@ public final class KamiEngine {
                 kind: kind,
                 checked: kind == .task && el.checked != 0,
                 level: kind == .heading ? el.checked : 0,
-                auxRange: el.aux_start..<el.aux_end
+                auxRange: el.aux_start..<el.aux_end,
+                wikiEmbed: (el.flags & UInt8(KAMI_ELEMENT_FLAG_WIKI)) != 0
             )
         }
     }

@@ -308,10 +308,148 @@ fn image_element() {
     assert_eq!(
         els[0].kind,
         ElementKind::Image {
-            src: ByteRange::new(7, 14)
+            src: ByteRange::new(7, 14),
+            wiki: false
         }
     );
     assert_eq!(&e.text()[7..14], "img.png");
+}
+
+#[test]
+fn wiki_image_embed_src_and_segments() {
+    // Obsidian `![[file.png]]` attachment embed: parses as an Image element
+    // whose src is the bare target (past the 3-byte `![[` opener), not the
+    // empty range `scan_dest` would return. `![[`/`]]` conceal; the filename
+    // paints IMAGE as the visible alt line.
+    let mut e = engine("x\n![[file.png]]");
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 BODY",
+            "2..5 u16:2..5 MARK conc",
+            "5..13 u16:5..13 IMAGE",
+            "13..15 u16:13..15 MARK conc",
+        ]
+    );
+    let els = e.elements_in(ByteRange::new(2, 15));
+    assert_eq!(els.len(), 1);
+    assert_eq!(els[0].range, ByteRange::new(2, 15));
+    assert_eq!(
+        els[0].kind,
+        ElementKind::Image {
+            src: ByteRange::new(5, 13),
+            wiki: true
+        }
+    );
+    assert_eq!(&e.text()[5..13], "file.png");
+}
+
+#[test]
+fn wiki_image_piped_src_excludes_alias() {
+    // `![[photo.png|caption]]`: the src is the target before the first `|`; the
+    // alias stays visible as the IMAGE body, the lead marker swallows the rest.
+    let mut e = engine("x\n![[photo.png|caption]]");
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 BODY",
+            "2..15 u16:2..15 MARK conc",
+            "15..22 u16:15..22 IMAGE",
+            "22..24 u16:22..24 MARK conc",
+        ]
+    );
+    let els = e.elements_in(ByteRange::new(2, 24));
+    assert_eq!(els.len(), 1);
+    assert_eq!(
+        els[0].kind,
+        ElementKind::Image {
+            src: ByteRange::new(5, 14),
+            wiki: true
+        }
+    );
+    assert_eq!(&e.text()[5..14], "photo.png");
+}
+
+#[test]
+fn wiki_image_src_anchors_past_swallowed_double_bracket() {
+    // An embed body can swallow a doubled `]]` (`![[[2024]] photo.png]]`);
+    // pulldown then resumes the target run *after* that inner `]]`, so the src
+    // is not simply the bytes following `![[`. Anchoring on the child span
+    // keeps the src equal to pulldown's `dest_url` and out of the concealed
+    // lead marker — the host resolves " photo.png", not "[2024]] photo.png".
+    let mut e = engine("x\n![[[2024]] photo.png]]");
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 BODY",
+            "2..12 u16:2..12 MARK conc",
+            "12..22 u16:12..22 IMAGE",
+            "22..24 u16:22..24 MARK conc",
+        ]
+    );
+    let els = e.elements_in(ByteRange::new(2, 24));
+    assert_eq!(els.len(), 1);
+    assert_eq!(
+        els[0].kind,
+        ElementKind::Image {
+            src: ByteRange::new(12, 22),
+            wiki: true
+        }
+    );
+    assert_eq!(&e.text()[12..22], " photo.png");
+
+    // Piped form of the same shape: the pipe is found from the alias side, so
+    // the src is the run between the inner `]]` and that pipe.
+    let e = engine("x\n![[[a|b]][c|d]]");
+    let els = e.elements_in(ByteRange::new(2, 17));
+    assert_eq!(els.len(), 1);
+    assert_eq!(
+        els[0].kind,
+        ElementKind::Image {
+            src: ByteRange::new(11, 13),
+            wiki: true
+        }
+    );
+    assert_eq!(&e.text()[11..13], "[c");
+}
+
+#[test]
+fn commonmark_image_with_bracketed_alt_is_not_wiki() {
+    // `![[bracketed] alt](a%20b.png)` is ONE CommonMark image whose node text
+    // starts with `![[`. Hosts used to read those three bytes and call it a wiki
+    // embed, which suppressed percent-decoding and hunted for a file literally
+    // named `a%20b.png`. The engine knows better because it knows the syntax.
+    let e = engine("![[bracketed] alt](a%20b.png)");
+    common::assert_invariants(&e);
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    let imgs: Vec<_> = els
+        .iter()
+        .filter(|el| matches!(el.kind, ElementKind::Image { .. }))
+        .collect();
+    assert_eq!(imgs.len(), 1, "{els:?}");
+    let ElementKind::Image { src, wiki } = imgs[0].kind else { unreachable!() };
+    assert!(!wiki, "a CommonMark image is never a wiki embed");
+    assert_eq!(&e.text()[src.start as usize..src.end as usize], "a%20b.png");
+}
+
+#[test]
+fn wiki_image_with_percent_escapes_is_wiki() {
+    // Mirror of the false-positive case: the same-looking target inside a real
+    // `![[…]]` embed IS a wiki embed, and its src is the literal vault path —
+    // the percent triplets are filename bytes, not an encoding to undo.
+    let e = engine("![[a%20b.png]]");
+    common::assert_invariants(&e);
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    assert_eq!(els.len(), 1);
+    let ElementKind::Image { src, wiki } = els[0].kind else { unreachable!() };
+    assert!(wiki, "an `![[…]]` embed is a wiki embed");
+    assert_eq!(&e.text()[src.start as usize..src.end as usize], "a%20b.png");
 }
 
 #[test]
@@ -920,6 +1058,81 @@ fn wikilink_in_table_cell_paints_body_only() {
 }
 
 #[test]
+fn wiki_image_empty_alias_conceals_whole_node() {
+    // `![[a|]]` mirrors the wikilink empty-alias mid-typing state: pulldown
+    // re-emits the paragraph tail inside the still-open embed. The node
+    // conceals whole, the tail styles normally, and the element still carries
+    // the src so the attachment stays resolvable while the alias is typed.
+    let mut e = engine("![[a|]] tail\nx\n");
+    e.set_selection(ByteRange::new(13, 13)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec!["0..7 u16:0..7 MARK conc", "7..15 u16:7..15 BODY"]
+    );
+    let els = e.elements_in(ByteRange::new(0, 7));
+    assert_eq!(els.len(), 1);
+    assert_eq!(
+        els[0].kind,
+        ElementKind::Image {
+            src: ByteRange::new(3, 4),
+            wiki: true
+        }
+    );
+    assert_eq!(&e.text()[3..4], "a");
+}
+
+#[test]
+fn wiki_image_empty_alias_trailing_siblings_stay_wellformed() {
+    // After the empty-alias quirk, pulldown re-walks the paragraph tail with
+    // corrupted state: a later healthy `![[Real|alias]]` arrives as a plain
+    // inline image, so its src degrades to the empty `scan_dest` range until
+    // the `![[a|]]` upstream is completed. Rendering must stay correct
+    // (markers + visible alias) and every invariant must hold.
+    let mut e = engine("![[a|]] mid ![[Real|alias]] end\nx\n");
+    e.set_selection(ByteRange::new(32, 32)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..7 u16:0..7 MARK conc",
+            "7..12 u16:7..12 BODY",
+            "12..20 u16:12..20 MARK conc",
+            "20..25 u16:20..25 IMAGE",
+            "25..27 u16:25..27 MARK conc",
+            "27..34 u16:27..34 BODY",
+        ]
+    );
+    assert_eq!(&e.text()[20..25], "alias");
+    let els = e.elements_in(ByteRange::new(0, 7));
+    assert_eq!(els.len(), 1);
+    assert_eq!(
+        els[0].kind,
+        ElementKind::Image {
+            src: ByteRange::new(3, 4),
+            wiki: true
+        }
+    );
+}
+
+#[test]
+fn wiki_image_in_table_cell_paints_body_only() {
+    // Inside a table, inline markers/elements are suppressed: the whole-table
+    // Block marker owns conceal, and the embed body paints IMAGE so the
+    // concealed grid renderer can style it.
+    let mut e = engine("| ![[w]] |\n|---|\n| b |\nx\n");
+    e.set_selection(ByteRange::new(23, 23)).unwrap();
+    common::assert_invariants(&e);
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    assert!(
+        els.iter().all(|el| !matches!(el.kind, ElementKind::Image { .. })),
+        "in-table wiki image must not emit an element"
+    );
+    let image_seg = segs(&e).iter().any(|s| s.contains("IMAGE"));
+    assert!(image_seg, "wiki image body inside the table paints IMAGE");
+}
+
+#[test]
 fn single_char_reference_link_keeps_visible_label() {
     // Critic-caught regression guard: `[1]` (numeric citation, reference
     // style) must keep its "1" visible off-caret — a closer-offset body
@@ -984,7 +1197,7 @@ fn reference_image_resolves_src() {
         .iter()
         .find(|el| matches!(el.kind, ElementKind::Image { .. }))
         .expect("a resolved reference image element");
-    let ElementKind::Image { src } = img.kind else { unreachable!() };
+    let ElementKind::Image { src, .. } = img.kind else { unreachable!() };
     assert_eq!(&e.text()[src.start as usize..src.end as usize], "pic.png");
 }
 
@@ -1283,4 +1496,149 @@ fn heading_element_setext_in_blockquote_excludes_quote_prefix() {
         })
         .collect();
     assert_eq!(heads, vec![(1, "Title")]);
+}
+
+// ------------------------------------------- upstream parser panic recovery
+
+/// Sweeps the `![[…]]` shapes that panic inside pulldown-cmark 0.13.4, both
+/// standalone and embedded in a real document.
+///
+/// The two build profiles assert DIFFERENT halves of the guard's contract,
+/// because the guard behaves differently in each by design. `cargo test`
+/// (debug) pins that the panic still propagates loudly, so the catch can never
+/// hide a defect in kami's own walk; the end-to-end recovery is therefore not
+/// observable here and is asserted under `cargo test --release`, which pins
+/// the shipped behavior: construction succeeds and the document degrades to
+/// unstyled, fully covered plain text.
+///
+/// The debug half doubles as an upstream tracker — if pulldown ever fixes the
+/// reversed slice these inputs stop panicking, this assertion flips, and the
+/// guard has become dead weight.
+#[test]
+fn pulldown_panic_inputs_degrade_to_plain_text() {
+    for atom in common::PULLDOWN_PANIC_ATOMS {
+        for src in [(*atom).to_string(), format!("# h\n\nplain {atom} tail\n")] {
+            let caught = std::panic::catch_unwind(|| {
+                let e = engine(&src);
+                common::assert_invariants(&e);
+                let elements = e.elements_in(ByteRange::new(0, e.len_bytes())).len();
+                (e.text().to_string(), segs(&e), elements)
+            });
+            if cfg!(debug_assertions) {
+                assert!(
+                    caught.is_err(),
+                    "debug builds must re-panic instead of swallowing: {src:?}"
+                );
+                continue;
+            }
+            let (text, all, elements) = caught.expect("release must recover, not unwind");
+            assert_eq!(text, src, "the fallback never mutates the text");
+            assert_eq!(elements, 0, "the fallback emits no elements: {src:?}");
+            assert_eq!(
+                all,
+                vec![format!(
+                    "0..{} u16:0..{} BODY",
+                    src.len(),
+                    src.chars().map(char::len_utf16).sum::<usize>()
+                )],
+                "the fallback is one plain covering segment: {src:?}"
+            );
+        }
+    }
+}
+
+/// The reparse behind `apply_edit` routes through the same guard as
+/// `Engine::new`, so typing into the panicking shape degrades that one
+/// keystroke and the NEXT edit styles normally again — the engine is never
+/// bricked. Release-only for the reason documented above.
+#[test]
+fn pulldown_panic_mid_typing_heals_on_the_next_edit() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    let caught = std::panic::catch_unwind(|| {
+        let mut e = engine("**b**\n");
+        // Typing the closing `]` is the keystroke that completes the shape.
+        e.apply_edit(ByteRange::new(6, 6), "![[]a]()]").unwrap();
+        e.apply_edit(ByteRange::new(15, 15), "]").unwrap();
+        common::assert_invariants(&e);
+        let bricked = segs(&e);
+        // Delete the offending run; the strong emphasis must style again.
+        e.apply_edit(ByteRange::new(6, 16), "").unwrap();
+        common::assert_invariants(&e);
+        (bricked, segs(&e))
+    });
+    let (bricked, healed) = caught.expect("release must recover, not unwind");
+    assert_eq!(bricked, vec!["0..16 u16:0..16 BODY".to_string()]);
+    assert_eq!(
+        healed,
+        vec![
+            "0..2 u16:0..2 MARK",
+            "2..3 u16:2..3 STRONG",
+            "3..5 u16:3..5 MARK",
+            "5..6 u16:5..6 BODY",
+        ]
+    );
+}
+
+/// A document with no panicking input is byte-for-byte unaffected by the
+/// guard: the catch fires only on an unwind, so every segment and element of
+/// a normal mixed document is exactly what the unguarded walk produced.
+#[test]
+fn parse_guard_leaves_normal_documents_untouched() {
+    let src = "# Title\n\nplain **b** [l](u) [[w]] ![[f.png]]\n\n- [ ] t\n";
+    let mut e = engine(src);
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 MARK",
+            "2..8 u16:2..8 H1",
+            "8..15 u16:8..15 BODY",
+            "15..17 u16:15..17 MARK conc",
+            "17..18 u16:17..18 STRONG",
+            "18..20 u16:18..20 MARK conc",
+            "20..21 u16:20..21 BODY",
+            "21..22 u16:21..22 MARK conc",
+            "22..23 u16:22..23 LINK",
+            "23..27 u16:23..27 MARK conc",
+            "27..28 u16:27..28 BODY",
+            "28..30 u16:28..30 MARK conc",
+            "30..31 u16:30..31 LINK",
+            "31..33 u16:31..33 MARK conc",
+            "33..34 u16:33..34 BODY",
+            "34..37 u16:34..37 MARK conc",
+            "37..42 u16:37..42 IMAGE",
+            "42..44 u16:42..44 MARK conc",
+            "44..46 u16:44..46 BODY",
+            "46..52 u16:46..52 TASK conc",
+            "52..54 u16:52..54 BODY",
+        ]
+    );
+    let els: Vec<(u32, u32, String)> = e
+        .elements_in(ByteRange::new(0, e.len_bytes()))
+        .iter()
+        .map(|el| {
+            let name = match el.kind {
+                ElementKind::Heading { level, .. } => format!("H{level}"),
+                ElementKind::Link { dest } => format!("Link({})", &src[dest.start as usize..dest.end as usize]),
+                ElementKind::WikiLink { target } => format!("Wiki({})", &src[target.start as usize..target.end as usize]),
+                ElementKind::Image { src: s, .. } => format!("Image({})", &src[s.start as usize..s.end as usize]),
+                ElementKind::Task { checked } => format!("Task({checked})"),
+                ElementKind::Fence { .. } => "Fence".to_string(),
+            };
+            (el.range.start, el.range.end, name)
+        })
+        .collect();
+    assert_eq!(
+        els,
+        vec![
+            (0, 8, "H1".to_string()),
+            (21, 27, "Link(u)".to_string()),
+            (28, 33, "Wiki(w)".to_string()),
+            (34, 44, "Image(f.png)".to_string()),
+            (46, 54, "Task(false)".to_string()),
+        ]
+    );
 }

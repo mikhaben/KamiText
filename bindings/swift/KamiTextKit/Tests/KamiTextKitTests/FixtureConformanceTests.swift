@@ -3,8 +3,9 @@ import Testing
 @testable import KamiTextKit
 
 /// Gate 2: replays EVERY committed conformance fixture through `KamiEngine`
-/// and asserts the resulting segments match `expect.segments` element-for-
-/// element (byte range, UTF-16 range, kind set, concealed). Fixture files
+/// and asserts the resulting segments match `expect.segments` one-for-one
+/// (byte range, UTF-16 range, kind set, concealed) and the resulting elements
+/// match `expect.elements` in order (id, byte range, kind, payload). Fixture files
 /// live at `<repo>/fixtures/`, resolved relative to this source file so the
 /// tests run from any checkout location. The list is discovered from the
 /// directory — a committed fixture that isn't replayed cannot exist.
@@ -87,6 +88,56 @@ struct FixtureConformanceTests {
             )
             #expect(actual.kinds == KamiKindSet(fixtureNames: expected.kinds), "kinds mismatch for \(name)")
             #expect(actual.concealed == expected.concealed, "concealed mismatch for \(name)")
+        }
+
+        let actualElements = try engine.elements(in: 0..<engine.lenBytes)
+        #expect(actualElements.count == fixture.expect.elements.count, "element count mismatch for \(name)")
+
+        for (index, (actual, expected)) in zip(actualElements, fixture.expect.elements).enumerated() {
+            #expect(actual.id == expected.id, "element \(index) id mismatch for \(name)")
+            #expect(
+                actual.range == expected.range.start..<expected.range.end,
+                "element \(index) byte range mismatch for \(name)"
+            )
+            switch expected.payload {
+            case let .task(checked):
+                #expect(actual.kind == .task, "element \(index) kind mismatch for \(name)")
+                #expect(actual.checked == checked, "element \(index) checked mismatch for \(name)")
+                // A kind with no range payload gets a 0-width aux range from the ABI.
+                #expect(actual.auxRange == 0..<0, "element \(index) aux range mismatch for \(name)")
+            case let .link(dest):
+                #expect(actual.kind == .link, "element \(index) kind mismatch for \(name)")
+                #expect(
+                    actual.auxRange == dest.start..<dest.end,
+                    "element \(index) dest range mismatch for \(name)"
+                )
+            case let .image(src, wiki):
+                #expect(actual.kind == .image, "element \(index) kind mismatch for \(name)")
+                #expect(
+                    actual.auxRange == src.start..<src.end,
+                    "element \(index) src range mismatch for \(name)"
+                )
+                #expect(actual.wikiEmbed == wiki, "element \(index) wiki mismatch for \(name)")
+            case let .fence(info):
+                #expect(actual.kind == .fence, "element \(index) kind mismatch for \(name)")
+                #expect(
+                    actual.auxRange == info.start..<info.end,
+                    "element \(index) info range mismatch for \(name)"
+                )
+            case let .wikilink(target):
+                #expect(actual.kind == .wikilink, "element \(index) kind mismatch for \(name)")
+                #expect(
+                    actual.auxRange == target.start..<target.end,
+                    "element \(index) target range mismatch for \(name)"
+                )
+            case let .heading(level, text):
+                #expect(actual.kind == .heading, "element \(index) kind mismatch for \(name)")
+                #expect(actual.level == level, "element \(index) level mismatch for \(name)")
+                #expect(
+                    actual.auxRange == text.start..<text.end,
+                    "element \(index) text range mismatch for \(name)"
+                )
+            }
         }
 
         #expect(try engine.text() == fixture.expect.text, "text mismatch for \(name)")

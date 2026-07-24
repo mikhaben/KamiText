@@ -23,7 +23,7 @@
     ],
     "elements": [
       {"id":0,"range":{"start":4,"end":29,"utf16Start":4,"utf16End":29},"kind":"link","dest":{"start":11,"end":24,"utf16Start":11,"utf16End":24}},
-      {"id":1,"range":{"start":34,"end":49,"utf16Start":34,"utf16End":49},"kind":"image","src":{"start":41,"end":48,"utf16Start":41,"utf16End":48}}
+      {"id":1,"range":{"start":34,"end":49,"utf16Start":34,"utf16End":49},"kind":"image","src":{"start":41,"end":48,"utf16Start":41,"utf16End":48},"wiki":false}
     ],
     "text": "See [docs](https://e.com \"t\") and ![alt](img.png)\nnext\n",
     "lenBytes": 55,

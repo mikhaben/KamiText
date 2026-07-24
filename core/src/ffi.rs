@@ -30,7 +30,7 @@ use crate::types::{
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// ABI version. Bumped on any breaking layout or semantic change.
-pub const KAMI_ABI_VERSION: u32 = 3;
+pub const KAMI_ABI_VERSION: u32 = 4;
 
 pub const KAMI_OK: i32 = 0;
 /// Out-of-bounds, reversed or scalar-splitting range on a mutating call.
@@ -88,6 +88,12 @@ pub const KAMI_ELEMENT_FENCE: u32 = 3;
 pub const KAMI_ELEMENT_WIKILINK: u32 = 4;
 pub const KAMI_ELEMENT_HEADING: u32 = 5;
 
+/// `KamiElement.flags` bit 0: this image came from Obsidian `![[…]]` embed
+/// syntax rather than CommonMark `![](…)`. Hosts use it to decide percent
+/// decoding (a wiki target is a literal vault path) and resizability (a `#`
+/// fragment means something else inside `[[…]]`).
+pub const KAMI_ELEMENT_FLAG_WIKI: u8 = 1;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct KamiElement {
@@ -98,12 +104,22 @@ pub struct KamiElement {
     pub kind: u32,
     /// Task: 1 = checked. Heading: level 1–6. Other kinds: 0.
     pub checked: u8,
-    pub _pad: [u8; 3],
+    /// KAMI_ELEMENT_FLAG_* bit set. 0 for every kind that defines no flag.
+    pub flags: u8,
+    pub _pad: [u8; 2],
     /// Link dest / image src / fence info / wikilink target / heading text
     /// byte range; 0-width when absent.
     pub aux_start: u32,
     pub aux_end: u32,
 }
+
+// The flag rides in reclaimed padding, so the layout MUST be unchanged for
+// every field a host already reads. A silent break here is an ABI break.
+const _: () = assert!(core::mem::size_of::<KamiElement>() == 28);
+const _: () = assert!(core::mem::offset_of!(KamiElement, checked) == 16);
+const _: () = assert!(core::mem::offset_of!(KamiElement, flags) == 17);
+const _: () = assert!(core::mem::offset_of!(KamiElement, aux_start) == 20);
+const _: () = assert!(core::mem::offset_of!(KamiElement, aux_end) == 24);
 
 /// Borrowed UTF-8 view into engine memory. NOT NUL-terminated.
 #[repr(C)]
@@ -197,7 +213,8 @@ impl Cell {
                     end: 0xDEAD_DEAD,
                     kind: 0xDEAD_DEAD,
                     checked: 0xDD,
-                    _pad: [0xDD; 3],
+                    flags: 0xDD,
+                    _pad: [0xDD; 2],
                     aux_start: 0xDEAD_DEAD,
                     aux_end: 0xDEAD_DEAD,
                 }
@@ -484,15 +501,20 @@ pub unsafe extern "C" fn kami_elements_in(
             }
             let els = cell.engine.elements_in(ByteRange::new(start, end));
             cell.elem_buf.extend(els.iter().map(|e| {
-                let (kind, checked, aux) = match e.kind {
+                let (kind, checked, flags, aux) = match e.kind {
                     ElementKind::Task { checked } => {
-                        (KAMI_ELEMENT_TASK, u8::from(checked), ByteRange::new(0, 0))
+                        (KAMI_ELEMENT_TASK, u8::from(checked), 0, ByteRange::new(0, 0))
                     }
-                    ElementKind::Link { dest } => (KAMI_ELEMENT_LINK, 0, dest),
-                    ElementKind::Image { src } => (KAMI_ELEMENT_IMAGE, 0, src),
-                    ElementKind::Fence { info } => (KAMI_ELEMENT_FENCE, 0, info),
-                    ElementKind::WikiLink { target } => (KAMI_ELEMENT_WIKILINK, 0, target),
-                    ElementKind::Heading { level, text } => (KAMI_ELEMENT_HEADING, level, text),
+                    ElementKind::Link { dest } => (KAMI_ELEMENT_LINK, 0, 0, dest),
+                    ElementKind::Image { src, wiki } => (
+                        KAMI_ELEMENT_IMAGE,
+                        0,
+                        if wiki { KAMI_ELEMENT_FLAG_WIKI } else { 0 },
+                        src,
+                    ),
+                    ElementKind::Fence { info } => (KAMI_ELEMENT_FENCE, 0, 0, info),
+                    ElementKind::WikiLink { target } => (KAMI_ELEMENT_WIKILINK, 0, 0, target),
+                    ElementKind::Heading { level, text } => (KAMI_ELEMENT_HEADING, level, 0, text),
                 };
                 KamiElement {
                     id: e.id,
@@ -500,7 +522,8 @@ pub unsafe extern "C" fn kami_elements_in(
                     end: e.range.end,
                     kind,
                     checked,
-                    _pad: [0; 3],
+                    flags,
+                    _pad: [0; 2],
                     aux_start: aux.start,
                     aux_end: aux.end,
                 }
