@@ -126,21 +126,55 @@ public struct KamiTextStorageApplier {
     /// the per-segment pass just above reset these paragraphs to `listStyle`
     /// (headIndent 0), so this is idempotent and self-healing — a paragraph
     /// that stops being a list is re-styled to `bodyStyle` (headIndent 0) by
-    /// that same pass, no sentinel needed. Task paragraphs carry `.taskMarker`
-    /// (not `.listBullet`/`.listOrdinal`) and so are never touched; quoted
-    /// lists keep `quoteStyle` via the `.blockquote` guard.
+    /// that same pass, no sentinel needed. Quoted lists keep `quoteStyle` via
+    /// the `.blockquote` guard.
+    ///
+    /// CONCEALED task paragraphs get the analogous treatment: the theme's task
+    /// style (checkbox-reserve hanging indent) reaches a paragraph via its
+    /// FIRST run, which for a NESTED task is the leading indent whitespace —
+    /// body-styled, so paragraph fixing propagates BODY and the box reserve is
+    /// lost. This pass re-derives it explicitly: first line = the theme's
+    /// reserve (the real indent glyphs then push the collapsed marker and text
+    /// deeper, so nesting depth stays visible), wrapped lines hang under the
+    /// text (reserve + whitespace prefix width). Top-level tasks compute the
+    /// values the theme already set, so the write is skipped — and a theme
+    /// with no task indent (`DefaultKamiTheme`) derives 0 and stays untouched.
     private func applyListHangingIndents(segments: [KamiSegment], to storage: NSMutableAttributedString, length: Int) {
         // Most applies carry no list segments at all — skip before bridging.
-        guard segments.contains(where: { $0.kinds.contains(.listBullet) || $0.kinds.contains(.listOrdinal) }) else { return }
+        guard segments.contains(where: {
+            $0.kinds.contains(.listBullet) || $0.kinds.contains(.listOrdinal)
+                || ($0.kinds.contains(.taskMarker) && $0.concealed)
+        }) else { return }
         // Live proxy, unlike `string as NSString` which can copy the whole
         // backing store on every apply.
         let ns = storage.mutableString
         for segment in segments {
-            guard segment.kinds.contains(.listBullet) || segment.kinds.contains(.listOrdinal),
+            let isTask = segment.kinds.contains(.taskMarker) && segment.concealed
+            guard segment.kinds.contains(.listBullet) || segment.kinds.contains(.listOrdinal) || isTask,
                   !segment.kinds.contains(.blockquote),
                   let marker = nsRange(segment.utf16Range, clampedTo: length),
                   marker.length > 0 else { continue }
             let para = ns.paragraphRange(for: marker)
+            if isTask {
+                // The reserve comes from the marker run's own style — the
+                // per-segment pass just set it from the theme, so this needs
+                // no theme API beyond what's already applied.
+                let base = (storage.attribute(.paragraphStyle, at: marker.location, effectiveRange: nil)
+                    as? NSParagraphStyle) ?? NSParagraphStyle()
+                let taskIndent = base.firstLineHeadIndent
+                let prefixLen = marker.location - para.location
+                let prefixWidth = prefixLen > 0
+                    ? measuredPrefixWidth(NSRange(location: para.location, length: prefixLen),
+                                          ns: ns, storage: storage)
+                    : 0
+                guard abs(base.firstLineHeadIndent - taskIndent) > 0.5
+                    || abs(base.headIndent - (taskIndent + prefixWidth)) > 0.5 else { continue }
+                let mutable = base.mutableCopy() as! NSMutableParagraphStyle
+                mutable.firstLineHeadIndent = taskIndent
+                mutable.headIndent = taskIndent + prefixWidth
+                storage.addAttribute(.paragraphStyle, value: mutable.copy(), range: para)
+                continue
+            }
             // Advance past the marker's trailing spaces/tabs to the item text.
             var content = NSMaxRange(marker)
             while content < NSMaxRange(para),
@@ -154,16 +188,8 @@ public struct KamiTextStorageApplier {
             // collapsing a list-heavy seed's thousands of CoreText size()
             // calls to a handful. Fonts for a given prefix are deterministic
             // per theme (bullets never conceal; leading whitespace is body).
-            let prefixRange = NSRange(location: para.location, length: prefixLen)
-            let prefixString = ns.substring(with: prefixRange)
-            let width: CGFloat
-            if let cached = memo.listPrefixWidth[prefixString] {
-                width = cached
-            } else {
-                width = storage.attributedSubstring(from: prefixRange).size().width
-                if memo.listPrefixWidth.count >= 256 { memo.listPrefixWidth.removeAll(keepingCapacity: true) }
-                memo.listPrefixWidth[prefixString] = width
-            }
+            let width = measuredPrefixWidth(NSRange(location: para.location, length: prefixLen),
+                                            ns: ns, storage: storage)
             // Base from the PARAGRAPH's first unit (not the marker): a host
             // pass may have inflated fields there (reserve spacing); copying
             // from it preserves them instead of silently reverting the whole
@@ -175,6 +201,22 @@ public struct KamiTextStorageApplier {
             mutable.headIndent = width // firstLineHeadIndent stays 0
             storage.addAttribute(.paragraphStyle, value: mutable.copy(), range: para)
         }
+    }
+
+    /// Rendered width of a marker/whitespace prefix, memoized by the prefix
+    /// STRING: prefixes repeat massively ("- ", "1. ", "  - ", "    "…) and
+    /// the theme is applier-immutable, so this collapses a list-heavy seed's
+    /// thousands of CoreText `size()` calls to a handful. Fonts for a given
+    /// prefix are deterministic per theme (bullets never conceal; leading
+    /// whitespace is body).
+    private func measuredPrefixWidth(_ prefixRange: NSRange, ns: NSMutableString,
+                                     storage: NSMutableAttributedString) -> CGFloat {
+        let prefixString = ns.substring(with: prefixRange)
+        if let cached = memo.listPrefixWidth[prefixString] { return cached }
+        let width = storage.attributedSubstring(from: prefixRange).size().width
+        if memo.listPrefixWidth.count >= 256 { memo.listPrefixWidth.removeAll(keepingCapacity: true) }
+        memo.listPrefixWidth[prefixString] = width
+        return width
     }
 
     /// Layers strikethrough + dimmed color onto the content (non-marker)
@@ -203,16 +245,74 @@ public struct KamiTextStorageApplier {
                 high = mid
             }
         }
+        // The overlay covers the task's OWN content: from its marker's end to
+        // the first BLANK line or next ITEM MARKER's line, whichever comes
+        // first. The element range swallows any nested sublist (CommonMark:
+        // an item contains its children), but checked state does NOT cascade
+        // — and body segments coalesce straight across item boundaries (a
+        // nested item's text run continues into its sibling's leading indent,
+        // or into a following plain paragraph), so neither the element range
+        // nor segment containment bounds the strike. The blank/marker rule is
+        // CommonMark's own: lazy continuation is exactly the run of
+        // non-blank, non-item lines after the marker, so those stay struck
+        // while children, siblings, and following blocks never are. (Blocks
+        // with their own kinds — headings, fences, quotes — break the body
+        // segment anyway and need no cap.)
+        var ownMarkerEndU16 = -1
+        var ownMarkerIndex = low
         var index = low
         while index < segments.count, segments[index].range.lowerBound < element.range.upperBound {
             let segment = segments[index]
             index += 1
-            guard segment.range.lowerBound >= element.range.lowerBound,
-                  segment.range.upperBound <= element.range.upperBound,
-                  !segment.kinds.contains(.marker), !segment.kinds.contains(.taskMarker),
+            guard segment.kinds.contains(.taskMarker),
+                  segment.range.lowerBound >= element.range.lowerBound,
+                  let marker = nsRange(segment.utf16Range, clampedTo: length) else { continue }
+            ownMarkerEndU16 = NSMaxRange(marker)
+            ownMarkerIndex = index
+            break
+        }
+        guard ownMarkerEndU16 >= 0 else { return }
+        let ns = storage.mutableString
+        // First blank (whitespace-only) line after the marker's own line.
+        var capU16 = Int.max
+        var lineStart = NSMaxRange(ns.paragraphRange(for: NSRange(location: ownMarkerEndU16 - 1, length: 0)))
+        while lineStart < length {
+            let para = ns.paragraphRange(for: NSRange(location: lineStart, length: 0))
+            guard para.length > 0 else { break }
+            var isBlank = true
+            for i in para.location..<NSMaxRange(para) {
+                let c = ns.character(at: i)
+                if c != 0x20, c != 0x09, c != 0x0A, c != 0x0D { isBlank = false; break }
+            }
+            if isBlank {
+                capU16 = para.location
+                break
+            }
+            lineStart = NSMaxRange(para)
+        }
+        // Next item marker before that blank, if any — its line caps tighter.
+        index = ownMarkerIndex
+        while index < segments.count, Int(segments[index].utf16Range.lowerBound) < capU16 {
+            let segment = segments[index]
+            index += 1
+            guard segment.kinds.contains(.taskMarker) || segment.kinds.contains(.listBullet)
+                      || segment.kinds.contains(.listOrdinal),
+                  let marker = nsRange(segment.utf16Range, clampedTo: length) else { continue }
+            capU16 = Swift.min(capU16, ns.paragraphRange(for: marker).location)
+            break
+        }
+        index = low
+        while index < segments.count, segments[index].range.lowerBound < element.range.upperBound {
+            let segment = segments[index]
+            index += 1
+            guard !segment.kinds.contains(.marker), !segment.kinds.contains(.taskMarker),
                   let range = nsRange(segment.utf16Range, clampedTo: length)
             else { continue }
-            storage.addAttributes(overlay, range: range)
+            let clippedStart = Swift.max(range.location, ownMarkerEndU16)
+            let clippedEnd = Swift.min(NSMaxRange(range), capU16)
+            guard clippedEnd > clippedStart else { continue }
+            storage.addAttributes(overlay, range: NSRange(location: clippedStart,
+                                                          length: clippedEnd - clippedStart))
         }
     }
 

@@ -248,6 +248,32 @@ fn task_list_marker_and_elements() {
 }
 
 #[test]
+fn nested_task_marker_anchors_at_bullet() {
+    // A nested item's pulldown range starts at the PARENT's content column,
+    // before the bullet. The marker must anchor at the bullet itself: the
+    // indent stays visible (nesting depth stays legible) while `- [x] `
+    // conceals, and the nested task still registers an element for toggling.
+    let mut e = engine("- [ ] outer\n    - [x] inner\n");
+    e.set_selection(ByteRange::new(28, 28)).unwrap(); // past the trailing newline
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..6 u16:0..6 TASK conc",
+            "6..16 u16:6..16 BODY",
+            "16..22 u16:16..22 TASK conc",
+            "22..28 u16:22..28 BODY",
+        ]
+    );
+    let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+    assert_eq!(els.len(), 2);
+    assert_eq!(els[0].range, ByteRange::new(0, 28));
+    assert_eq!(els[0].kind, ElementKind::Task { checked: false });
+    assert_eq!(els[1].range, ByteRange::new(14, 28));
+    assert_eq!(els[1].kind, ElementKind::Task { checked: true });
+}
+
+#[test]
 fn bullet_list_never_concealed() {
     let mut e = engine("x\n- one\n- two\n");
     e.set_selection(ByteRange::new(0, 0)).unwrap();

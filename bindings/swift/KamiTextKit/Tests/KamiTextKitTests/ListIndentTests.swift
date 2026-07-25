@@ -47,6 +47,22 @@ struct ListIndentTests {
         #expect(headIndent(storage, at: todo) == 0)
     }
 
+    @Test func nestedTaskKeepsBoxReserve() throws {
+        // A NESTED concealed task's paragraph begins with body-styled indent
+        // whitespace, so paragraph fixing would propagate BODY over the marker
+        // run's task style and drop the checkbox reserve. The pass re-derives
+        // it explicitly: first line = the theme's reserve, wrapped lines hang
+        // under the text (reserve + whitespace prefix width).
+        let text = "x\n- [ ] top task\n    - [ ] sub task\n"   // caret on "x": both concealed
+        let engine = try KamiEngine(text: text)
+        let applier = KamiTextStorageApplier(theme: TaskIndentTheme())
+        let storage = NSTextStorage(string: text)
+        try applier.applyFull(engine: engine, to: storage)
+        let sub = (storage.string as NSString).range(of: "sub task").location
+        #expect(abs(firstLineHeadIndent(storage, at: sub) - TaskIndentTheme.reserve) < 0.5)
+        #expect(headIndent(storage, at: sub) > TaskIndentTheme.reserve)
+    }
+
     @Test func idempotentOnReapply() throws {
         let engine = try KamiEngine(text: "- item text\n")
         let applier = KamiTextStorageApplier()
@@ -134,6 +150,22 @@ struct ListIndentTests {
 
     private func headIndent(_ storage: NSTextStorage, at location: Int) -> CGFloat {
         (storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle)?.headIndent ?? 0
+    }
+
+    /// `DefaultKamiTheme` plus a checkbox reserve on concealed task markers —
+    /// the minimal theme shape the task-indent branch keys off.
+    private struct TaskIndentTheme: KamiTheme {
+        static let reserve: CGFloat = 24
+        func attributes(for kinds: KamiKindSet, concealed: Bool) -> [NSAttributedString.Key: Any] {
+            var attrs = DefaultKamiTheme().attributes(for: kinds, concealed: concealed)
+            if kinds.contains(.taskMarker), concealed {
+                let style = NSMutableParagraphStyle()
+                style.firstLineHeadIndent = Self.reserve
+                style.headIndent = Self.reserve
+                attrs[.paragraphStyle] = style.copy()
+            }
+            return attrs
+        }
     }
 
     private func firstLineHeadIndent(_ storage: NSTextStorage, at location: Int) -> CGFloat {

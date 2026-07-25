@@ -65,6 +65,63 @@ struct ApplierPatchTests {
         #expect(strikethrough(storage, at: contentLocation) == false)
     }
 
+    @Test func checkedParentDoesNotStrikeNestedChildren() throws {
+        // The parent element's range swallows the nested sublist, but checked
+        // state does not cascade: the child keeps its own (unchecked) face,
+        // and the child line's leading indent gets no struck whitespace stub.
+        let text = "- [x] parent line\n    - [ ] child line\n"
+        let engine = try KamiEngine(text: text)
+        let applier = KamiTextStorageApplier()
+        let storage = NSTextStorage(string: text)
+        try applier.applyFull(engine: engine, to: storage)
+        let ns = text as NSString
+        #expect(strikethrough(storage, at: ns.range(of: "parent").location) == true)
+        #expect(strikethrough(storage, at: ns.range(of: "child").location) == false)
+        #expect(strikethrough(storage, at: ns.range(of: "    -").location) == false)
+    }
+
+    @Test func checkedChildStrikesOnlyItself() throws {
+        // The inverse direction: a checked child under an unchecked parent
+        // strikes its own content and nothing of the parent's.
+        let text = "- [ ] parent line\n    - [x] child line\n"
+        let engine = try KamiEngine(text: text)
+        let applier = KamiTextStorageApplier()
+        let storage = NSTextStorage(string: text)
+        try applier.applyFull(engine: engine, to: storage)
+        let ns = text as NSString
+        #expect(strikethrough(storage, at: ns.range(of: "parent").location) == false)
+        #expect(strikethrough(storage, at: ns.range(of: "child").location) == true)
+    }
+
+    @Test func checkedChildWithFollowingSiblingStillStrikes() throws {
+        // A nested item's body run coalesces into the NEXT sibling's leading
+        // indent, so the checked child's own segment spills past its element —
+        // the line-window overlay must still strike its text (a containment
+        // check would drop it) and must not touch the sibling.
+        let text = "- [ ] parent line\n    - [x] child one\n    - [ ] child two\n"
+        let engine = try KamiEngine(text: text)
+        let applier = KamiTextStorageApplier()
+        let storage = NSTextStorage(string: text)
+        try applier.applyFull(engine: engine, to: storage)
+        let ns = text as NSString
+        #expect(strikethrough(storage, at: ns.range(of: "child one").location) == true)
+        #expect(strikethrough(storage, at: ns.range(of: "child two").location) == false)
+    }
+
+    @Test func checkedTaskDoesNotStrikePastBlankLine() throws {
+        // A blank line ends the item (CommonMark), but the following plain
+        // paragraph coalesces into the same body segment — the blank-line cap
+        // must keep the overlay off it.
+        let text = "- [x] done line\n\nfollowing paragraph\n"
+        let engine = try KamiEngine(text: text)
+        let applier = KamiTextStorageApplier()
+        let storage = NSTextStorage(string: text)
+        try applier.applyFull(engine: engine, to: storage)
+        let ns = text as NSString
+        #expect(strikethrough(storage, at: ns.range(of: "done").location) == true)
+        #expect(strikethrough(storage, at: ns.range(of: "following").location) == false)
+    }
+
     private func strikethrough(_ storage: NSTextStorage, at location: Int) -> Bool {
         storage.attribute(.strikethroughStyle, at: location, effectiveRange: nil) != nil
     }

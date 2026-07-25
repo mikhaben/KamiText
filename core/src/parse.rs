@@ -870,10 +870,16 @@ fn fenced_code(text: &str, frame: &Frame, extensions: Extensions, out: &mut Pars
 fn list_item(text: &str, frame: &Frame, out: &mut ParseOut) {
     let r = frame.range;
     let bytes = text.as_bytes();
-    let p = r.start;
-
-    // Bullet or ordinal token at the item start (pulldown item ranges begin
-    // exactly at the marker; probed).
+    // A NESTED item's range begins at the parent's content column, so
+    // indentation precedes the bullet (probed: `"  - [x] "` for an item one
+    // level down). Skip it — the token and any task marker anchor at the
+    // bullet, leaving the indent visible so nesting depth stays legible while
+    // the marker conceals. Top-level item ranges begin exactly at the marker
+    // (probed), so the skip is a no-op there.
+    let mut p = r.start;
+    while p < r.end && matches!(bytes[p as usize], b' ' | b'\t') {
+        p += 1;
+    }
     let token: Option<(ByteRange, Kind)> = if p < r.end && matches!(bytes[p as usize], b'-' | b'*' | b'+') {
         Some((ByteRange::new(p, p + 1), Kind::LIST_BULLET))
     } else {
@@ -909,7 +915,10 @@ fn list_item(text: &str, frame: &Frame, out: &mut ParseOut) {
         // faithful stand-in for that line against the whole-line reveal region.
         // Fenced blocks deliberately differ (owner = the whole block) so their
         // fences and info string stay legible while the caret is inside.
-        let marker = ByteRange::new(r.start, m_end);
+        // Anchored at the bullet (`p`), not `r.start`: a nested item's range
+        // leads with indentation, which must stay visible when the marker
+        // conceals or the item loses its depth.
+        let marker = ByteRange::new(p, m_end);
         push_marker(out, marker, Kind::TASK_MARKER, marker, MarkerScope::Block);
         out.task_boxes.push(TaskBox {
             item: r,

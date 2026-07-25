@@ -130,6 +130,12 @@ fn fixtures() -> Vec<Fixture> {
             ops: vec![Op::Selection(29, 29)],
         },
         Fixture {
+            name: "nested-task-list",
+            options: default_opts(),
+            text: "- [ ] outer\n    - [x] inner\n        - [ ] deepest\n- plain\n",
+            ops: vec![Op::Selection(0, 0)],
+        },
+        Fixture {
             name: "links-and-images",
             options: default_opts(),
             text: "See [docs](https://e.com \"t\") and ![alt](img.png)\nnext\n",

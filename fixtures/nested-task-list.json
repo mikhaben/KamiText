@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "name": "nested-task-list",
+  "options": {"extensions": ["tables","task_lists","strikethrough","wikilinks"], "reveal": "line"},
+  "text": "- [ ] outer\n    - [x] inner\n        - [ ] deepest\n- plain\n",
+  "ops": [
+    {"type":"selection","start":0,"end":0}
+  ],
+  "expect": {
+    "patches": [
+      {"dirty":[]}
+    ],
+    "segments": [
+      {"range":{"start":0,"end":6,"utf16Start":0,"utf16End":6},"kinds":["task_marker"],"concealed":false},
+      {"range":{"start":6,"end":16,"utf16Start":6,"utf16End":16},"kinds":["body"],"concealed":false},
+      {"range":{"start":16,"end":22,"utf16Start":16,"utf16End":22},"kinds":["task_marker"],"concealed":true},
+      {"range":{"start":22,"end":36,"utf16Start":22,"utf16End":36},"kinds":["body"],"concealed":false},
+      {"range":{"start":36,"end":42,"utf16Start":36,"utf16End":42},"kinds":["task_marker"],"concealed":true},
+      {"range":{"start":42,"end":50,"utf16Start":42,"utf16End":50},"kinds":["body"],"concealed":false},
+      {"range":{"start":50,"end":51,"utf16Start":50,"utf16End":51},"kinds":["list_bullet"],"concealed":false},
+      {"range":{"start":51,"end":58,"utf16Start":51,"utf16End":58},"kinds":["body"],"concealed":false}
+    ],
+    "elements": [
+      {"id":0,"range":{"start":0,"end":50,"utf16Start":0,"utf16End":50},"kind":"task","checked":false},
+      {"id":1,"range":{"start":14,"end":50,"utf16Start":14,"utf16End":50},"kind":"task","checked":true},
+      {"id":2,"range":{"start":34,"end":50,"utf16Start":34,"utf16End":50},"kind":"task","checked":false}
+    ],
+    "text": "- [ ] outer\n    - [x] inner\n        - [ ] deepest\n- plain\n",
+    "lenBytes": 58,
+    "lenUtf16": 58
+  }
+}
