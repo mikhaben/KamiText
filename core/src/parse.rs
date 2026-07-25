@@ -143,9 +143,17 @@ impl Frame {
 /// pulldown-cmark 0.13.4 panics on inputs a user reaches by typing — the
 /// `![[…]]` embed shapes `![[]a]()]]`, `![[]|]()]]`, `![[] ]()]]`, `![[]*]()]]`
 /// drive `handle_wikilink` into a reversed slice (its own start past its end).
-/// 0.13.4 is the newest release, so there is no version to move to. Unguarded,
-/// the unwind reaches the C ABI, which poisons the engine: one keystroke ends
-/// the editing session until the app restarts.
+/// Unguarded, the unwind reaches the C ABI, which poisons the engine: one
+/// keystroke ends the editing session until the app restarts.
+///
+/// REMOVE THIS GUARD once the dependency reaches a release containing
+/// pulldown-cmark `ebf31da8` ("Fix subtract-overflow panic in handle_wikilink
+/// on malformed input", PR #1111 / issue #1108, merged 2026-07-08), which adds
+/// the `end_ix <= start_ix` bail this works around. It is unreleased as of
+/// 0.13.4 (2026-05-20) — the newest release predates the fix, which is why the
+/// guard still earns its place. Deleting it will re-expose the four shapes
+/// above, so bump the dependency and confirm `pulldown_panic_inputs_degrade_to_plain_text`
+/// fails before removing anything.
 ///
 /// Recovery is sound here because `parse` is a pure function of
 /// `(text, extensions)` and Rust unwinding is memory-safe: a half-filled
