@@ -158,10 +158,14 @@ public struct KamiTextStorageApplier {
             if isTask {
                 // The reserve comes from the marker run's own style — the
                 // per-segment pass just set it from the theme, so this needs
-                // no theme API beyond what's already applied.
-                let base = (storage.attribute(.paragraphStyle, at: marker.location, effectiveRange: nil)
+                // no theme API beyond what's already applied. The BASE is the
+                // paragraph's first unit, like the list branch: a host pass
+                // may have inflated fields there (reserve spacing), and
+                // copying from the marker instead would silently wipe them.
+                let taskIndent = ((storage.attribute(.paragraphStyle, at: marker.location, effectiveRange: nil)
+                    as? NSParagraphStyle) ?? NSParagraphStyle()).firstLineHeadIndent
+                let base = (storage.attribute(.paragraphStyle, at: para.location, effectiveRange: nil)
                     as? NSParagraphStyle) ?? NSParagraphStyle()
-                let taskIndent = base.firstLineHeadIndent
                 let prefixLen = marker.location - para.location
                 let prefixWidth = prefixLen > 0
                     ? measuredPrefixWidth(NSRange(location: para.location, length: prefixLen),
