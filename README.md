@@ -15,7 +15,7 @@ I wanted hidden-syntax live editing for a notes app I was building and couldn't 
 - **Patch-based updates** — each edit returns exactly the byte ranges whose styling changed; adapters restyle only those, so keystroke cost stays flat regardless of document size
 - **UTF-16 offset conversion built in** — Apple, Kotlin, and JS adapters never do their own emoji math
 - **Typing behaviors as data** — list/quote/task continuation and checkbox toggling come back as edit plans the host applies through its own undo stack
-- **Conformance fixtures** — 32 golden JSON fixtures; an adapter that replays them correctly is behaviorally identical to the reference
+- **Conformance fixtures** — golden JSON fixtures in `fixtures/`; an adapter that replays them correctly is behaviorally identical to the reference
 
 ## Measured (Apple Silicon, release, 2026-07)
 
@@ -86,21 +86,9 @@ let sync = KamiTextSync(theme: MyTheme())
 
 Kind bits compose, so bold-inside-a-heading is `[.heading1, .strong]` and can be styled distinctly. Interactive widgets (real checkbox views, tappable links) are adapter-side work built on the `Element` stream the engine already provides — the styling hooks above are the pure-visual tier.
 
-## Project Structure
+## Layout
 
-```
-core/                  # kamitext: the Rust engine (parse → segments → conceal → patches)
-├── src/               # document, offsets, parse, analysis, conceal, patch, behaviors, engine, ffi
-├── tests/             # golden, differential (proptest), corpus sweep, pseudo-fuzz, FFI-misuse suites
-├── benches/           # criterion keystroke + selection benchmarks (synthetic 5–250 KB + real corpus doc)
-└── include/           # cbindgen-generated C header + module map
-bindings/swift/
-├── build-xcframework.sh   # Rust → KamiCore.xcframework (4 Apple slices)
-└── KamiTextKit/           # Swift package: engine wrapper, theme, applier, sync driver, macOS demo
-fixtures/              # conformance fixtures (JSON) — the adapter compatibility contract
-corpora/               # real-markdown regression corpus; sources and licenses in manifest.json
-PLATFORM_BUGS.md       # AppKit/TextKit quirk ledger: workarounds, retest dates, negative findings
-```
+The Rust engine lives in `core/` (crate `kamitext`; C header in `core/include/`), the Swift package in `bindings/swift/KamiTextKit/`, the adapter compatibility contract in `fixtures/`, and the real-markdown regression corpus in `corpora/`. [`PLATFORM_BUGS.md`](PLATFORM_BUGS.md) records AppKit/TextKit quirks with workarounds and retest dates.
 
 ## Tech
 
