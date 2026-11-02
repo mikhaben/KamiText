@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn composition_example() {
-        // Composition example: `# **word**` → [MARKER "# "], [H1|MARKER "**"],
+        // Composition example: `# **word**` → [H1|MARKER "# "], [H1|MARKER "**"],
         // [H1|STRONG "word"], [H1|MARKER "**"].
         let text = "# **word**";
         let segs = flat(text);
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(
             got,
             vec![
-                (0, 2, Kind::MARKER),
+                (0, 2, Kind::HEADING1 | Kind::MARKER),
                 (2, 4, Kind::HEADING1 | Kind::MARKER),
                 (4, 8, Kind::HEADING1 | Kind::STRONG),
                 (8, 10, Kind::HEADING1 | Kind::MARKER),

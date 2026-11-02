@@ -11,7 +11,7 @@
       {"dirty":[]}
     ],
     "segments": [
-      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["heading1","marker"],"concealed":false},
       {"range":{"start":2,"end":10,"utf16Start":2,"utf16End":10},"kinds":["heading1"],"concealed":false},
       {"range":{"start":10,"end":12,"utf16Start":10,"utf16End":12},"kinds":["blockquote","marker"],"concealed":true},
       {"range":{"start":12,"end":18,"utf16Start":12,"utf16End":18},"kinds":["blockquote"],"concealed":false},

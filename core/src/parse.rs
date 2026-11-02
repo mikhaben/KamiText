@@ -13,10 +13,10 @@
 //! Composition rule: an *inline* node's delimiters carry the *enclosing*
 //! kinds plus `MARKER`, never the node's own kind — each node paints its kind
 //! over (own range minus own markers), and markers are separate paints
-//! unioned during flattening. Three block constructs deliberately break this
-//! and union their own kind onto the marker (blockquote `>` prefixes, table
-//! source, thematic breaks): their hosts key block decorations off the
-//! marker's kind bits.
+//! unioned during flattening. Four block constructs deliberately break this
+//! and union their own kind onto the marker (blockquote `>` prefixes, ATX
+//! heading `#` runs, table source, thematic breaks): their hosts key block
+//! decorations and paragraph styles off the marker's kind bits.
 
 use crate::types::{ByteRange, Element, ElementKind, Extensions, Kind, MarkerScope};
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag};
@@ -694,7 +694,19 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
     for m in &own {
         push_marker(out, *m, Kind::MARKER, r, MarkerScope::Block);
     }
-    paint_minus(r, &own, Kind::heading(level), out);
+    if is_atx {
+        // Full-range paint (markers included), the blockquote pattern: the
+        // `#` run is the paragraph's first character, and a theme's heading
+        // paragraph style reaches the whole paragraph only through it.
+        out.paints.push(Paint {
+            range: r,
+            kind: Kind::heading(level),
+        });
+    } else {
+        // A setext underline is its own line: a heading bit there would give
+        // the hidden underline row the heading's paragraph spacing.
+        paint_minus(r, &own, Kind::heading(level), out);
+    }
 
     let text_range = if is_atx {
         let mut start = own.first().map_or(r.start, |m| m.end);

@@ -73,8 +73,7 @@ fn composition_example_revealed_at_caret() {
     assert_eq!(
         segs(&e),
         vec![
-            "0..2 u16:0..2 MARK",
-            "2..4 u16:2..4 H1|MARK",
+            "0..4 u16:0..4 H1|MARK",
             "4..8 u16:4..8 H1|STRONG",
             "8..10 u16:8..10 H1|MARK",
         ]
@@ -90,8 +89,7 @@ fn composition_example_concealed_away_from_caret() {
         segs(&e),
         vec![
             "0..6 u16:0..6 BODY",
-            "6..8 u16:6..8 MARK conc",
-            "8..10 u16:8..10 H1|MARK conc",
+            "6..10 u16:6..10 H1|MARK conc",
             "10..14 u16:10..14 H1|STRONG",
             "14..16 u16:14..16 H1|MARK conc",
         ]
@@ -110,8 +108,7 @@ fn reveal_mode_none_conceals_everything() {
     assert_eq!(
         segs(&e),
         vec![
-            "0..2 u16:0..2 MARK conc",
-            "2..4 u16:2..4 H1|MARK conc",
+            "0..4 u16:0..4 H1|MARK conc",
             "4..8 u16:4..8 H1|STRONG",
             "8..10 u16:8..10 H1|MARK conc",
         ]
@@ -203,7 +200,7 @@ fn cjk_heading() {
     common::assert_invariants(&e);
     assert_eq!(
         segs(&e),
-        vec!["0..2 u16:0..2 MARK", "2..11 u16:2..5 H1"]
+        vec!["0..2 u16:0..2 H1|MARK", "2..11 u16:2..5 H1"]
     );
 }
 
@@ -1619,7 +1616,7 @@ fn parse_guard_leaves_normal_documents_untouched() {
     assert_eq!(
         segs(&e),
         vec![
-            "0..2 u16:0..2 MARK",
+            "0..2 u16:0..2 H1|MARK",
             "2..8 u16:2..8 H1",
             "8..15 u16:8..15 BODY",
             "15..17 u16:15..17 MARK conc",
@@ -1796,4 +1793,37 @@ fn fence_info_excludes_cr_and_tabs() {
         let expected: Vec<&str> = if info.is_empty() { vec![] } else { vec![info] };
         assert_eq!(info_segs, expected, "{text:?}");
     }
+}
+
+/// An ATX heading's `#` run is the paragraph's FIRST character, and text
+/// systems give a whole paragraph its first character's paragraph style
+/// (NSTextStorage paragraph fixing). The markers therefore carry the heading
+/// kind — the blockquote `>` pattern — or a theme's heading spacing/leading
+/// never reaches the heading. Closing sequences match the opening run.
+#[test]
+fn atx_heading_markers_carry_heading_kind() {
+    let e = engine("x\n## Title ##\n");
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 BODY",
+            "2..5 u16:2..5 H2|MARK conc",
+            "5..10 u16:5..10 H2",
+            "10..13 u16:10..13 H2|MARK conc",
+            "13..14 u16:13..14 H2",
+        ]
+    );
+    // Quoted heading: the quote prefix still leads the paragraph, and the
+    // heading marker keeps both container bits.
+    let e = engine("x\n> # T\n");
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 BODY",
+            "2..4 u16:2..4 QUOTE|MARK conc",
+            "4..6 u16:4..6 H1|QUOTE|MARK conc",
+            "6..8 u16:6..8 H1|QUOTE",
+        ]
+    );
 }

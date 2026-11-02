@@ -31,13 +31,13 @@ fn create_query_free_roundtrip() {
             generation: 0,
         };
         assert_eq!(kami_segments_in(e, 0, 10, &mut segs), KAMI_OK);
-        assert_eq!(segs.len, 4);
+        assert_eq!(segs.len, 3);
         let s0 = *segs.ptr;
-        assert_eq!((s0.start, s0.end), (0, 2)); // "# " marker
-        assert_eq!(s0.kinds, 1 << 21); // MARKER bit
-        let s2 = *segs.ptr.add(2);
-        assert_eq!((s2.start, s2.end), (4, 8)); // "word"
-        assert_eq!(s2.kinds, (1 << 1) | (1 << 7)); // HEADING1|STRONG
+        assert_eq!((s0.start, s0.end), (0, 4)); // "# **": revealed markers coalesce
+        assert_eq!(s0.kinds, (1 << 1) | (1 << 21)); // HEADING1|MARKER
+        let s1 = *segs.ptr.add(1);
+        assert_eq!((s1.start, s1.end), (4, 8)); // "word"
+        assert_eq!(s1.kinds, (1 << 1) | (1 << 7)); // HEADING1|STRONG
 
         let mut txt = KamiStr {
             ptr: ptr::null(),
@@ -207,7 +207,9 @@ fn stale_views_are_scribbled_in_debug() {
     if !cfg!(debug_assertions) {
         return;
     }
-    let e = new_engine("# **word**");
+    // Four segments ("a ", "**", "word", "**"), so slot 3 exists in the first
+    // fill and is a tail slot of the second.
+    let e = new_engine("a **word**");
     unsafe {
         let mut segs = KamiSegments {
             ptr: ptr::null(),
@@ -215,6 +217,7 @@ fn stale_views_are_scribbled_in_debug() {
             generation: 0,
         };
         assert_eq!(kami_segments_in(e, 0, 10, &mut segs), KAMI_OK);
+        assert_eq!(segs.len, 4);
         assert_eq!((*segs.ptr).start, 0);
 
         // Any subsequent call invalidates the view...

@@ -13,7 +13,7 @@
       {"dirty":[{"start":2,"end":10,"utf16Start":2,"utf16End":10}]}
     ],
     "segments": [
-      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["marker"],"concealed":false},
+      {"range":{"start":0,"end":2,"utf16Start":0,"utf16End":2},"kinds":["heading1","marker"],"concealed":false},
       {"range":{"start":2,"end":5,"utf16Start":2,"utf16End":5},"kinds":["heading1"],"concealed":false},
       {"range":{"start":5,"end":7,"utf16Start":5,"utf16End":7},"kinds":["heading1","marker"],"concealed":false},
       {"range":{"start":7,"end":8,"utf16Start":7,"utf16End":8},"kinds":["heading1","strong"],"concealed":false},
