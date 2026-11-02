@@ -13,10 +13,11 @@
 //! Composition rule: an *inline* node's delimiters carry the *enclosing*
 //! kinds plus `MARKER`, never the node's own kind — each node paints its kind
 //! over (own range minus own markers), and markers are separate paints
-//! unioned during flattening. Four block constructs deliberately break this
+//! unioned during flattening. Five block constructs deliberately break this
 //! and union their own kind onto the marker (blockquote `>` prefixes, ATX
-//! heading `#` runs, table source, thematic breaks): their hosts key block
-//! decorations and paragraph styles off the marker's kind bits.
+//! heading `#` runs, unquoted code fences, table source, thematic breaks):
+//! their hosts key block decorations and paragraph styles off the marker's
+//! kind bits.
 
 use crate::types::{ByteRange, Element, ElementKind, Extensions, Kind, MarkerScope};
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag};
@@ -114,6 +115,9 @@ struct Frame {
     in_table: bool,
     /// Task box captured from a TaskListMarker event (items only).
     task: Option<(ByteRange, bool)>,
+    /// Index into the walk's quoted-event starts where this node's
+    /// descendants begin (read by blockquotes only).
+    quoted_starts_from: usize,
 }
 
 impl Frame {
@@ -213,6 +217,11 @@ fn walk(text: &str, extensions: Extensions, out: &mut ParseOut) {
     let mut table_depth = 0u32;
     // Depth of a spurious subtree currently being skipped (see below).
     let mut skip_depth = 0u32;
+    // Start offset of every non-End event inside a blockquote, in document
+    // order. On a quote's continuation line, the line's first event start
+    // bounds its container prefix exactly — pulldown begins a lazy line's
+    // text AT its first non-space byte, so a lazy `>` is never in the prefix.
+    let mut quoted_starts: Vec<u32> = Vec::new();
 
     // Reference definitions are resolved by pulldown's eager first pass and
     // exposed on the OffsetIter before we consume it. Snapshot them owned:
@@ -229,7 +238,12 @@ fn walk(text: &str, extensions: Extensions, out: &mut ParseOut) {
     let mut def_urls: Vec<(UniCase<String>, ByteRange)> = Vec::new();
     for (label, def) in iter.reference_definitions().iter() {
         let span = ByteRange::new(def.span.start as u32, def.span.end as u32);
-        def_spans.push(span);
+        // A footnote-style `[^n]: text` is a definition only while its text
+        // is one word (footnotes are not enabled); concealing it then would
+        // hide prose the multi-word form shows. It still resolves links.
+        if !label.starts_with('^') {
+            def_spans.push(span);
+        }
         def_urls.push((UniCase::new(label.to_string()), scan_def_url(text, span)));
     }
     def_spans.sort_by_key(|s| s.start);
@@ -259,6 +273,10 @@ fn walk(text: &str, extensions: Extensions, out: &mut ParseOut) {
                 skip_depth = 1;
             }
             continue;
+        }
+        if quote_depth > 0 && !matches!(event, Event::End(_)) {
+            debug_assert!(quoted_starts.last().is_none_or(|&l| l <= r.start), "event starts out of order");
+            quoted_starts.push(r.start);
         }
         match event {
             Event::Start(tag) => {
@@ -311,6 +329,7 @@ fn walk(text: &str, extensions: Extensions, out: &mut ParseOut) {
                     quote_depth: enclosing_quotes,
                     in_table: enclosing_table,
                     task: None,
+                    quoted_starts_from: quoted_starts.len(),
                 });
             }
             Event::End(_) => {
@@ -321,7 +340,8 @@ fn walk(text: &str, extensions: Extensions, out: &mut ParseOut) {
                 if matches!(frame.node, NodeKind::Table) {
                     table_depth -= 1;
                 }
-                finish_node(text, frame, r, &def_urls, extensions, out);
+                let descendant_starts = &quoted_starts[frame.quoted_starts_from..];
+                finish_node(text, frame, r, &def_urls, descendant_starts, extensions, out);
             }
             Event::Text(_) => note_child(&mut stack, r),
             Event::Code(_) => {
@@ -468,18 +488,6 @@ fn push_marker(out: &mut ParseOut, range: ByteRange, kind: Kind, owner: ByteRang
     }
 }
 
-/// Skips `depth` blockquote prefixes (`up to 3 spaces, '>', optional space`)
-/// starting at `pos`, bounded by `line_end`. Returns the position after them,
-/// or None if the line doesn't carry that many prefixes (lazy continuation).
-fn skip_quote_prefixes(text: &str, mut pos: u32, line_end: u32, depth: u32) -> Option<u32> {
-    let bytes = text.as_bytes();
-    for _ in 0..depth {
-        let (_, after) = one_quote_prefix(bytes, pos, line_end)?;
-        pos = after;
-    }
-    Some(pos)
-}
-
 /// Skips a line's container prefix — any run of spaces, tabs and quote `>`s —
 /// from `pos`, bounded by `line_end`. Only for lines pulldown has already
 /// classified as a block's syntax line (setext underline, closing fence), where
@@ -516,19 +524,26 @@ pub(crate) fn one_quote_prefix(bytes: &[u8], pos: u32, line_end: u32) -> Option<
     }
 }
 
-/// `one_quote_prefix` with a caller-chosen indentation allowance (spaces or
-/// tabs, counted per byte) instead of the fixed 3 spaces.
-fn indented_quote_prefix(bytes: &[u8], pos: u32, line_end: u32, allowance: u32) -> Option<(u32, u32)> {
+/// The `n`-th (0-based) quote `>` in the container prefix `[pos, prefix_end)`,
+/// plus its one optional following space (bounded by `line_end`). None when
+/// the prefix holds fewer `>`s — a lazy line of this quote — or anything but
+/// spaces, tabs and `>`.
+fn nth_quote_marker(bytes: &[u8], pos: u32, prefix_end: u32, line_end: u32, n: u32) -> Option<(u32, u32)> {
+    let mut seen = 0;
     let mut p = pos;
-    while p < line_end && p - pos < allowance && matches!(bytes[p as usize], b' ' | b'\t') {
+    while p < prefix_end {
+        match bytes[p as usize] {
+            b'>' if seen == n => {
+                let after = if p + 1 < line_end && bytes[p as usize + 1] == b' ' { p + 2 } else { p + 1 };
+                return Some((p, after));
+            }
+            b'>' => seen += 1,
+            b' ' | b'\t' => {}
+            _ => return None,
+        }
         p += 1;
     }
-    if p < line_end && bytes[p as usize] == b'>' {
-        let after = if p + 1 < line_end && bytes[p as usize + 1] == b' ' { p + 2 } else { p + 1 };
-        Some((p, after))
-    } else {
-        None
-    }
+    None
 }
 
 fn finish_node(
@@ -536,6 +551,7 @@ fn finish_node(
     frame: Frame,
     end_range: ByteRange,
     def_urls: &[(UniCase<String>, ByteRange)],
+    descendant_starts: &[u32],
     extensions: Extensions,
     out: &mut ParseOut,
 ) {
@@ -544,7 +560,7 @@ fn finish_node(
     let r = frame.range;
     match frame.node {
         NodeKind::Heading(level) => heading(text, &frame, out, level),
-        NodeKind::BlockQuote => blockquote(text, &frame, out),
+        NodeKind::BlockQuote => blockquote(text, &frame, descendant_starts, out),
         NodeKind::FencedCode => fenced_code(text, &frame, extensions, out),
         NodeKind::IndentedCode => {
             out.paints.push(Paint {
@@ -686,7 +702,9 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
         }
         let run = skip_container_prefix(bytes, ls, trimmed.end);
         if run < trimmed.end && (bytes[run as usize] == b'=' || bytes[run as usize] == b'-') {
-            own.push(ByteRange::new(run, trimmed.end));
+            // Through the line ending: a heading-kind `\n` would lay the
+            // hidden underline row out at heading height.
+            own.push(ByteRange::new(run, r.end));
         }
     }
 
@@ -749,7 +767,7 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
     });
 }
 
-fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
+fn blockquote(text: &str, frame: &Frame, descendant_starts: &[u32], out: &mut ParseOut) {
     let r = frame.range;
     let bytes = text.as_bytes();
     let mut own: Vec<ByteRange> = Vec::new();
@@ -763,14 +781,6 @@ fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
         }
         p
     };
-    // Indentation allowed before the node's own `>` on continuation lines:
-    // the 3 spaces of a top-level quote, or — for a quote inside a list item
-    // (`- a\n  - > q\n    > r`) — as far as its first-line `>` sits past the
-    // enclosing quote prefixes. Never more: CommonMark's bound is the item's
-    // content column + 3, and the first-line `>` never sits left of that
-    // column, so a deeper-indented `>` stays lazy paragraph text.
-    let first_base = skip_quote_prefixes(text, line_start, r.start, frame.quote_depth).unwrap_or(line_start);
-    let indent_allowance = (r.start.saturating_sub(first_base)).max(3);
     while line_start < r.end {
         let mut line_end = line_start;
         while line_end < (text.len() as u32) && bytes[line_end as usize] != b'\n' {
@@ -780,8 +790,13 @@ fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
             // First line: enclosing quote markers sit before r.start already.
             one_quote_prefix(bytes, r.start, line_end)
         } else {
-            skip_quote_prefixes(text, line_start, line_end, frame.quote_depth)
-                .and_then(|p| indented_quote_prefix(bytes, p, line_end, indent_allowance))
+            // The container prefix ends where the line's first event starts
+            // (or at the line end when it has none: blank `>`, fence or
+            // underline rows, definitions — never lazy text). It holds only
+            // indentation and quote `>`s, at any list-item depth.
+            let i = descendant_starts.partition_point(|&s| s < line_start);
+            let prefix_end = descendant_starts.get(i).map_or(line_end, |&s| s.min(line_end));
+            nth_quote_marker(bytes, line_start, prefix_end, line_end, frame.quote_depth)
         };
         if let Some((m_start, after)) = own_prefix {
             own.push(ByteRange::new(m_start, after.min(r.end)));
@@ -895,7 +910,19 @@ fn fenced_code(text: &str, frame: &Frame, extensions: Extensions, out: &mut Pars
             };
             push_marker(out, *m, kind, r, MarkerScope::Block);
         }
-        paint_minus(r, &own, Kind::CODE_BLOCK, out);
+        if frame.quote_depth == 0 {
+            // Full-range paint, the ATX-heading pattern: each fence line is a
+            // paragraph led by its fence marker, so the code paragraph style
+            // reaches the fence rows only through the marker. Quoted fences
+            // are led by `> ` instead, and hosts recognise their per-line
+            // (non-structural) markers by the bare opening `MARKER`.
+            out.paints.push(Paint {
+                range: r,
+                kind: Kind::CODE_BLOCK,
+            });
+        } else {
+            paint_minus(r, &own, Kind::CODE_BLOCK, out);
+        }
     }
 
     out.verbatim_blocks.push(r);

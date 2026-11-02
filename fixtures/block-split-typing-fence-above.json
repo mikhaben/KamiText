@@ -11,7 +11,7 @@
       {"dirty":[{"start":0,"end":20,"utf16Start":0,"utf16End":20}]}
     ],
     "segments": [
-      {"range":{"start":0,"end":3,"utf16Start":0,"utf16End":3},"kinds":["marker"],"concealed":false},
+      {"range":{"start":0,"end":3,"utf16Start":0,"utf16End":3},"kinds":["code_block","marker"],"concealed":false},
       {"range":{"start":3,"end":20,"utf16Start":3,"utf16End":20},"kinds":["code_block"],"concealed":false}
     ],
     "elements": [

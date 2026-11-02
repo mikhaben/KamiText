@@ -563,10 +563,10 @@ fn fenced_code_block() {
         segs(&e),
         vec![
             "0..2 u16:0..2 BODY",
-            "2..5 u16:2..5 MARK conc",
-            "5..9 u16:5..9 FENCEINFO conc",
+            "2..5 u16:2..5 CODEBLOCK|MARK conc",
+            "5..9 u16:5..9 CODEBLOCK|FENCEINFO conc",
             "9..20 u16:9..20 CODEBLOCK",
-            "20..23 u16:20..23 MARK conc",
+            "20..23 u16:20..23 CODEBLOCK|MARK conc",
             "23..24 u16:23..24 BODY",
         ]
     );
@@ -693,7 +693,7 @@ fn setext_heading() {
     common::assert_invariants(&e);
     assert_eq!(
         segs(&e),
-        vec!["0..6 u16:0..6 H1", "6..11 u16:6..11 MARK", "11..12 u16:11..12 H1"]
+        vec!["0..6 u16:0..6 H1", "6..12 u16:6..12 MARK"]
     );
 }
 
@@ -1707,10 +1707,10 @@ fn closing_fence_in_nested_list_item_conceals() {
         let code: Vec<&str> = e
             .segments_in(ByteRange::new(0, e.len_bytes()))
             .iter()
-            .filter(|s| s.kinds.contains(Kind::CODE_BLOCK))
+            .filter(|s| s.kinds.contains(Kind::CODE_BLOCK) && !s.concealed)
             .map(|s| &text[s.range.start as usize..s.range.end as usize])
             .collect();
-        assert!(code.iter().all(|c| !c.contains("```") && !c.contains("~~~")), "{text:?}: fence in code: {code:?}");
+        assert!(code.iter().all(|c| !c.contains("```") && !c.contains("~~~")), "{text:?}: visible fence in code: {code:?}");
     }
 }
 
@@ -1729,8 +1729,8 @@ fn indented_fence_lookalike_content_stays_code() {
 #[test]
 fn setext_underline_in_nested_list_item_conceals() {
     for (text, underline) in [
-        ("- a\n  - b\n\n    Title\n    -----\n", "-----"),
-        ("- a\n\t- b\n\n\t\tTitle\n\t\t=====\n", "====="),
+        ("- a\n  - b\n\n    Title\n    -----\n", "-----\n"),
+        ("- a\n\t- b\n\n\t\tTitle\n\t\t=====\n", "=====\n"),
     ] {
         let e = none_engine(text);
         common::assert_invariants(&e);
@@ -1826,4 +1826,88 @@ fn atx_heading_markers_carry_heading_kind() {
             "6..8 u16:6..8 H1|QUOTE",
         ]
     );
+}
+
+// ------------------------------------------------------------- follow-up 1
+
+/// A concealed setext underline must not leave a heading-height blank row:
+/// its line ending belongs to the hidden underline (concealed with it), not to
+/// the heading — a heading-kind `\n` lays the empty row out at heading size.
+#[test]
+fn setext_underline_line_ending_hides_with_the_underline() {
+    let mut e = engine("x\n\nTitle\n=====\nbody\n");
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec!["0..3 u16:0..3 BODY", "3..9 u16:3..9 H1", "9..15 u16:9..15 MARK conc", "15..20 u16:15..20 BODY"]
+    );
+    // Revealed (caret on the title): the row is raw source, no heading kind.
+    e.set_selection(ByteRange::new(4, 4)).unwrap();
+    assert_eq!(
+        segs(&e),
+        vec!["0..3 u16:0..3 BODY", "3..9 u16:3..9 H1", "9..15 u16:9..15 MARK", "15..20 u16:15..20 BODY"]
+    );
+    // CRLF: the whole `\r\n` ending hides too.
+    let e = none_engine("Title\r\n---\r\nbody\r\n");
+    assert_eq!(concealed_runs(&e), vec!["---\r\n"]);
+}
+
+/// A footnote-style definition (`[^label]: text`, footnotes extension off)
+/// parses as a link reference definition only when its text is one word.
+/// Visible text must never vanish: it renders raw like the multi-word form.
+#[test]
+fn footnote_style_definition_stays_visible() {
+    for text in ["[^1]: Yes.\n", "Body.\n\n[^note]: https://example.com\n"] {
+        let e = none_engine(text);
+        common::assert_invariants(&e);
+        assert!(concealed_runs(&e).iter().all(|r| !r.contains("]:")), "{text:?}: {:?}", concealed_runs(&e));
+    }
+    // Neighbor: an ordinary reference definition still conceals.
+    let e = none_engine("[r]: /u\n");
+    assert_eq!(concealed_runs(&e), vec!["[r]: /u"]);
+}
+
+/// Fence lines are paragraphs of their own, led by the fence marker: the
+/// markers carry the code-block kind (the D5 heading mechanism) so a theme's
+/// code paragraph style reaches the fence rows. Quoted fences stay bare — the
+/// `> ` prefix leads those paragraphs, and hosts tell a quoted (per-line
+/// marker) fence from a structural one by that bare opening marker.
+#[test]
+fn fence_markers_carry_code_block_kind_unless_quoted() {
+    let mut e = engine("x\n```py\nfn\n```\n");
+    e.set_selection(ByteRange::new(0, 0)).unwrap();
+    common::assert_invariants(&e);
+    assert_eq!(
+        segs(&e),
+        vec![
+            "0..2 u16:0..2 BODY",
+            "2..5 u16:2..5 CODEBLOCK|MARK conc",
+            "5..7 u16:5..7 CODEBLOCK|FENCEINFO conc",
+            "7..11 u16:7..11 CODEBLOCK",
+            "11..14 u16:11..14 CODEBLOCK|MARK conc",
+            "14..15 u16:14..15 BODY",
+        ]
+    );
+    let e = none_engine("> ```\n> x\n> ```\n");
+    common::assert_invariants(&e);
+    let fence_marks: Vec<String> = e
+        .segments_in(ByteRange::new(0, e.len_bytes()))
+        .iter()
+        .filter(|s| s.concealed && e.text()[s.range.start as usize..s.range.end as usize].contains("```"))
+        .map(|s| kind_names(s.kinds))
+        .collect();
+    assert_eq!(fence_marks, vec!["QUOTE|MARK", "QUOTE|MARK"]);
+}
+
+/// A quote continuation `>` may sit anywhere within the container's 3-space
+/// allowance — here 5 spaces under an item whose content column is 2 — and
+/// still conceal; a deeper `>` is lazy paragraph text and stays visible.
+#[test]
+fn over_indented_quote_continuation_conceals_lazy_text_stays() {
+    let e = none_engine("- > q\n     > r\n");
+    common::assert_invariants(&e);
+    assert_eq!(concealed_runs(&e), vec!["> ", "> "]);
+    let e = none_engine("- > q\n       > r\n");
+    assert_eq!(concealed_runs(&e), vec!["> "]);
 }
