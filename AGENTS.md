@@ -15,7 +15,7 @@ Rust (from `core/`) — `cargo` may live at `~/.cargo/bin/cargo` if not on PATH:
 
 Swift (from `bindings/swift/KamiTextKit/`) — requires the xcframework bootstrap first:
 
-- `../build-xcframework.sh` — Rust release builds for 4 Apple targets → `KamiCore.xcframework`. Rerun after ANY Rust change or the package links a stale core. The script defaults `CARGO` to `~/.cargo/bin/cargo`; with a Homebrew rustup, run `CARGO=$(which cargo) ../build-xcframework.sh`
+- `../build-xcframework.sh` — Rust release builds for 4 Apple targets → `KamiCore.xcframework`; needs `rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-ios-macabi` once, or it fails with "can't find crate for `core`". Rerun after ANY Rust change or the package links a stale core. The script defaults `CARGO` to `~/.cargo/bin/cargo`; with a Homebrew rustup, run `CARGO=$(which cargo) ../build-xcframework.sh`
 - `swift build` / `swift test` — native macOS build + conformance/regression tests
 - `swift run KamiDemoMac` — macOS demo window; `--selftest` = headless gate (seed + keystroke sync + reveal assertions, exits 0)
 - Catalyst/iOS test destinations: `xcodebuild test -scheme KamiTextKit -destination 'platform=macOS,variant=Mac Catalyst' -derivedDataPath .dd CODE_SIGNING_ALLOWED=NO`
