@@ -63,6 +63,28 @@ struct ListIndentTests {
         #expect(headIndent(storage, at: sub) > TaskIndentTheme.reserve)
     }
 
+    @Test(arguments: [
+        "- top\n  - sub item\n",
+        "1. top\n   1. sub item\n",
+        "x\n- [ ] top\n    - [ ] sub item\n",   // caret on "x": both tasks concealed
+    ])
+    func nestedItemKeepsListParagraphSpacing(text: String) throws {
+        // A nested item's paragraph starts with body-styled indent whitespace,
+        // and paragraph fixing gives the whole paragraph its first unit's
+        // style — so without the list pass re-deriving it, nested items took
+        // BODY spacing while top-level ones kept the theme's list spacing.
+        let engine = try KamiEngine(text: text)
+        let storage = NSTextStorage(string: try engine.text())
+        try KamiTextStorageApplier(theme: ListSpacingTheme()).applyFull(engine: engine, to: storage)
+        storage.fixAttributes(in: NSRange(location: 0, length: storage.length))
+        let ns = storage.string as NSString
+        let top = ns.range(of: "top").location
+        let sub = ns.range(of: "sub item").location
+        #expect(paragraphSpacing(storage, at: top) == ListSpacingTheme.listSpacing)
+        #expect(paragraphSpacing(storage, at: sub) == ListSpacingTheme.listSpacing)
+        #expect(headIndent(storage, at: sub) > 0)
+    }
+
     @Test func idempotentOnReapply() throws {
         let engine = try KamiEngine(text: "- item text\n")
         let applier = KamiTextStorageApplier()
@@ -166,6 +188,46 @@ struct ListIndentTests {
             }
             return attrs
         }
+    }
+
+    /// `DefaultKamiTheme` plus distinct list and body paragraph spacing, one
+    /// instance per paragraph kind keyed off the run's own kind bits — the
+    /// shape of the apps' theme adapter.
+    private struct ListSpacingTheme: KamiTheme {
+        static let listSpacing: CGFloat = 4
+        private let list: NSParagraphStyle = {
+            let style = NSMutableParagraphStyle()
+            style.paragraphSpacing = listSpacing
+            return style.copy() as! NSParagraphStyle
+        }()
+        private let task: NSParagraphStyle = {
+            let style = NSMutableParagraphStyle()
+            style.paragraphSpacing = listSpacing
+            style.firstLineHeadIndent = 24
+            style.headIndent = 24
+            return style.copy() as! NSParagraphStyle
+        }()
+        private let body: NSParagraphStyle = {
+            let style = NSMutableParagraphStyle()
+            style.paragraphSpacing = 10
+            return style.copy() as! NSParagraphStyle
+        }()
+
+        func attributes(for kinds: KamiKindSet, concealed: Bool) -> [NSAttributedString.Key: Any] {
+            var attrs = DefaultKamiTheme().attributes(for: kinds, concealed: concealed)
+            if kinds.contains(.taskMarker) {
+                attrs[.paragraphStyle] = concealed ? task : list
+            } else if kinds.contains(.listBullet) || kinds.contains(.listOrdinal) {
+                attrs[.paragraphStyle] = list
+            } else {
+                attrs[.paragraphStyle] = body
+            }
+            return attrs
+        }
+    }
+
+    private func paragraphSpacing(_ storage: NSTextStorage, at location: Int) -> CGFloat {
+        (storage.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle)?.paragraphSpacing ?? -1
     }
 
     private func firstLineHeadIndent(_ storage: NSTextStorage, at location: Int) -> CGFloat {

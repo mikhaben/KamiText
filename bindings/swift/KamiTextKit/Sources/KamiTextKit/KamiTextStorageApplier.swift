@@ -155,27 +155,30 @@ public struct KamiTextStorageApplier {
                   let marker = nsRange(segment.utf16Range, clampedTo: length),
                   marker.length > 0 else { continue }
             let para = ns.paragraphRange(for: marker)
+            // Base: the MARKER run's style — the theme's list/task paragraph
+            // style, which the per-segment pass just set. A nested item's
+            // first unit is its indent whitespace, body-styled, and paragraph
+            // fixing would spread that body spacing over the whole item. The
+            // paragraph's first unit holds no host-inflated fields to keep:
+            // the patch is widened to whole paragraphs, so the per-segment
+            // pass reset it in this same apply.
+            let markerStyle = (storage.attribute(.paragraphStyle, at: marker.location, effectiveRange: nil)
+                as? NSParagraphStyle) ?? NSParagraphStyle()
+            let current = (storage.attribute(.paragraphStyle, at: para.location, effectiveRange: nil)
+                as? NSParagraphStyle) ?? NSParagraphStyle()
             if isTask {
-                // The reserve comes from the marker run's own style — the
-                // per-segment pass just set it from the theme, so this needs
-                // no theme API beyond what's already applied. The BASE is the
-                // paragraph's first unit, like the list branch: a host pass
-                // may have inflated fields there (reserve spacing), and
-                // copying from the marker instead would silently wipe them.
-                let taskIndent = ((storage.attribute(.paragraphStyle, at: marker.location, effectiveRange: nil)
-                    as? NSParagraphStyle) ?? NSParagraphStyle()).firstLineHeadIndent
-                let base = (storage.attribute(.paragraphStyle, at: para.location, effectiveRange: nil)
-                    as? NSParagraphStyle) ?? NSParagraphStyle()
+                // The reserve comes from the marker run's own style, so this
+                // needs no theme API beyond what's already applied.
+                let taskIndent = markerStyle.firstLineHeadIndent
                 let prefixLen = marker.location - para.location
                 let prefixWidth = prefixLen > 0
                     ? measuredPrefixWidth(NSRange(location: para.location, length: prefixLen),
                                           ns: ns, storage: storage)
                     : 0
-                guard abs(base.firstLineHeadIndent - taskIndent) > 0.5
-                    || abs(base.headIndent - (taskIndent + prefixWidth)) > 0.5 else { continue }
-                let mutable = base.mutableCopy() as! NSMutableParagraphStyle
+                let mutable = markerStyle.mutableCopy() as! NSMutableParagraphStyle
                 mutable.firstLineHeadIndent = taskIndent
                 mutable.headIndent = taskIndent + prefixWidth
+                guard !current.isEqual(mutable) else { continue } // idempotent no-op
                 storage.addAttribute(.paragraphStyle, value: mutable.copy(), range: para)
                 continue
             }
@@ -194,15 +197,9 @@ public struct KamiTextStorageApplier {
             // per theme (bullets never conceal; leading whitespace is body).
             let width = measuredPrefixWidth(NSRange(location: para.location, length: prefixLen),
                                             ns: ns, storage: storage)
-            // Base from the PARAGRAPH's first unit (not the marker): a host
-            // pass may have inflated fields there (reserve spacing); copying
-            // from it preserves them instead of silently reverting the whole
-            // paragraph to the theme instance.
-            let base = (storage.attribute(.paragraphStyle, at: para.location, effectiveRange: nil)
-                as? NSParagraphStyle) ?? NSParagraphStyle()
-            guard abs(base.headIndent - width) > 0.5 else { continue } // idempotent no-op
-            let mutable = base.mutableCopy() as! NSMutableParagraphStyle
+            let mutable = markerStyle.mutableCopy() as! NSMutableParagraphStyle
             mutable.headIndent = width // firstLineHeadIndent stays 0
+            guard !current.isEqual(mutable) else { continue } // idempotent no-op
             storage.addAttribute(.paragraphStyle, value: mutable.copy(), range: para)
         }
     }
