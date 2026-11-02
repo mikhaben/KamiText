@@ -1911,3 +1911,23 @@ fn over_indented_quote_continuation_conceals_lazy_text_stays() {
     let e = none_engine("- > q\n       > r\n");
     assert_eq!(concealed_runs(&e), vec!["> "]);
 }
+
+/// The whole underline row is heading syntax, its container prefix included:
+/// a quoted underline's `> ` must not carry the heading kind, or the hidden
+/// row (whose first unit is that `> `) takes the heading's paragraph spacing.
+#[test]
+fn quoted_setext_underline_row_carries_no_heading_kind() {
+    let text = "> Title\n> =====\n> body\n";
+    let e = none_engine(text);
+    common::assert_invariants(&e);
+    let underline_row = ByteRange::new(8, 16);
+    let heading_in_row: Vec<String> = e
+        .segments_in(underline_row)
+        .iter()
+        .filter(|s| s.kinds.intersects(Kind::HEADING1) && s.range.intersects(underline_row))
+        .map(|s| format!("{}..{} {}", s.range.start, s.range.end, kind_names(s.kinds)))
+        .collect();
+    assert!(heading_in_row.is_empty(), "{heading_in_row:?}");
+    // Neighbor: the title row keeps the heading kind on its text.
+    assert!(e.segments_in(ByteRange::new(2, 7)).iter().all(|s| s.kinds.contains(Kind::HEADING1)));
+}

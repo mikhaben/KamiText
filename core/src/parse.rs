@@ -659,6 +659,8 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
             || bytes[hash_end as usize] == b'\t'
             || bytes[hash_end as usize] == b'\r');
 
+    // Setext only: the whole underline line, container prefix included.
+    let mut underline_row: Option<ByteRange> = None;
     if is_atx {
         // Opening marker: `#`-run plus one following space/tab.
         let mut m_end = hash_end;
@@ -705,6 +707,7 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
             // Through the line ending: a heading-kind `\n` would lay the
             // hidden underline row out at heading height.
             own.push(ByteRange::new(run, r.end));
+            underline_row = Some(ByteRange::new(ls, r.end));
         }
     }
 
@@ -721,9 +724,10 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
             kind: Kind::heading(level),
         });
     } else {
-        // A setext underline is its own line: a heading bit there would give
-        // the hidden underline row the heading's paragraph spacing.
-        paint_minus(r, &own, Kind::heading(level), out);
+        // The underline row is its own paragraph: a heading bit anywhere on
+        // it — its container prefix (`> `) leads the row — would give the
+        // hidden row the heading's paragraph spacing.
+        paint_minus(r, underline_row.as_slice(), Kind::heading(level), out);
     }
 
     let text_range = if is_atx {
