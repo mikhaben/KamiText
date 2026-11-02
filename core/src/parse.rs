@@ -480,6 +480,19 @@ fn skip_quote_prefixes(text: &str, mut pos: u32, line_end: u32, depth: u32) -> O
     Some(pos)
 }
 
+/// Skips a line's container prefix — any run of spaces, tabs and quote `>`s —
+/// from `pos`, bounded by `line_end`. Only for lines pulldown has already
+/// classified as a block's syntax line (setext underline, closing fence), where
+/// nothing before the syntax run can be content: list-item indentation there
+/// is unbounded (4 spaces or 2 tabs one level down), unlike the 3-space
+/// allowance of a top-level line.
+fn skip_container_prefix(bytes: &[u8], mut pos: u32, line_end: u32) -> u32 {
+    while pos < line_end && matches!(bytes[pos as usize], b' ' | b'\t' | b'>') {
+        pos += 1;
+    }
+    pos
+}
+
 /// Consumes ONE blockquote prefix (up to 3 spaces, `>`, optional space) at
 /// `pos`, bounded by `line_end`. Returns `(marker_start, after)` where
 /// `marker_start` is the `>` byte — the single definition of the prefix
@@ -498,6 +511,21 @@ pub(crate) fn one_quote_prefix(bytes: &[u8], pos: u32, line_end: u32) -> Option<
             p += 1;
         }
         Some((marker, p))
+    } else {
+        None
+    }
+}
+
+/// `one_quote_prefix` with a caller-chosen indentation allowance (spaces or
+/// tabs, counted per byte) instead of the fixed 3 spaces.
+fn indented_quote_prefix(bytes: &[u8], pos: u32, line_end: u32, allowance: u32) -> Option<(u32, u32)> {
+    let mut p = pos;
+    while p < line_end && p - pos < allowance && matches!(bytes[p as usize], b' ' | b'\t') {
+        p += 1;
+    }
+    if p < line_end && bytes[p as usize] == b'>' {
+        let after = if p + 1 < line_end && bytes[p as usize + 1] == b' ' { p + 2 } else { p + 1 };
+        Some((p, after))
     } else {
         None
     }
@@ -648,20 +676,17 @@ fn heading(text: &str, frame: &Frame, out: &mut ParseOut, level: u8) {
             }
         }
     } else {
-        // Setext: the underline is the last line of the node range.
+        // Setext: the underline is the last line of the node range — pulldown
+        // already classified it, so everything before the `=`/`-` run on that
+        // line is container prefix (quote `>`s, list-item indentation).
         let trimmed = trim_trailing_newline(text, r);
         let mut ls = trimmed.end;
         while ls > r.start && bytes[ls as usize - 1] != b'\n' {
             ls -= 1;
         }
-        if let Some(p) = skip_quote_prefixes(text, ls, trimmed.end, frame.quote_depth) {
-            let mut run = p;
-            while run < trimmed.end && bytes[run as usize] == b' ' && run - p < 3 {
-                run += 1;
-            }
-            if run < trimmed.end && (bytes[run as usize] == b'=' || bytes[run as usize] == b'-') {
-                own.push(ByteRange::new(run, trimmed.end));
-            }
+        let run = skip_container_prefix(bytes, ls, trimmed.end);
+        if run < trimmed.end && (bytes[run as usize] == b'=' || bytes[run as usize] == b'-') {
+            own.push(ByteRange::new(run, trimmed.end));
         }
     }
 
@@ -726,21 +751,27 @@ fn blockquote(text: &str, frame: &Frame, out: &mut ParseOut) {
         }
         p
     };
+    // Indentation allowed before the node's own `>` on continuation lines:
+    // the 3 spaces of a top-level quote, or — for a quote inside a list item
+    // (`- a\n  - > q\n    > r`) — as far as its first-line `>` sits past the
+    // enclosing quote prefixes. Never more: CommonMark's bound is the item's
+    // content column + 3, and the first-line `>` never sits left of that
+    // column, so a deeper-indented `>` stays lazy paragraph text.
+    let first_base = skip_quote_prefixes(text, line_start, r.start, frame.quote_depth).unwrap_or(line_start);
+    let indent_allowance = (r.start.saturating_sub(first_base)).max(3);
     while line_start < r.end {
         let mut line_end = line_start;
         while line_end < (text.len() as u32) && bytes[line_end as usize] != b'\n' {
             line_end += 1;
         }
-        let scan_from = if line_start < r.start { r.start } else { line_start };
-        let depth = if line_start < r.start {
+        let own_prefix = if line_start < r.start {
             // First line: enclosing quote markers sit before r.start already.
-            0
+            one_quote_prefix(bytes, r.start, line_end)
         } else {
-            frame.quote_depth
+            skip_quote_prefixes(text, line_start, line_end, frame.quote_depth)
+                .and_then(|p| indented_quote_prefix(bytes, p, line_end, indent_allowance))
         };
-        if let Some(p) = skip_quote_prefixes(text, scan_from, line_end, depth)
-            && let Some((m_start, after)) = one_quote_prefix(bytes, p, line_end)
-        {
+        if let Some((m_start, after)) = own_prefix {
             own.push(ByteRange::new(m_start, after.min(r.end)));
         }
         line_start = line_end + 1;
@@ -784,13 +815,14 @@ fn fenced_code(text: &str, frame: &Frame, extensions: Extensions, out: &mut Pars
             open_run_end += 1;
         }
         own.push(ByteRange::new(p, open_run_end));
-        // Info string: trimmed remainder of the opening line.
+        // Info string: trimmed remainder of the opening line. A CRLF line
+        // ends in `\r` here (line1_end stops at `\n`) — never info text.
         let mut is = open_run_end;
-        while is < line1_end && bytes[is as usize] == b' ' {
+        while is < line1_end && matches!(bytes[is as usize], b' ' | b'\t') {
             is += 1;
         }
         let mut ie = line1_end;
-        while ie > is && bytes[ie as usize - 1] == b' ' {
+        while ie > is && matches!(bytes[ie as usize - 1], b' ' | b'\t' | b'\r') {
             ie -= 1;
         }
         info_range = ByteRange::new(is, ie);
@@ -802,29 +834,24 @@ fn fenced_code(text: &str, frame: &Frame, extensions: Extensions, out: &mut Pars
     }
 
     // Closing line: last line of the range (unless it IS the opening line),
-    // possibly behind blockquote prefixes.
+    // and only when pulldown emitted no code text on it — an unclosed block's
+    // last line is content even when it looks like a fence. Its prefix is
+    // container syntax (quote `>`s, list-item indentation of any depth).
     let trimmed = trim_trailing_newline(text, r);
     let mut ls = trimmed.end;
     while ls > r.start && bytes[ls as usize - 1] != b'\n' {
         ls -= 1;
     }
-    if ls > line1_end
-        && (fence_char == b'`' || fence_char == b'~')
-        && let Some(q0) = skip_quote_prefixes(text, ls, trimmed.end, frame.quote_depth)
-    {
-        let mut q = q0;
-        let mut spaces = 0;
-        while q < trimmed.end && bytes[q as usize] == b' ' && spaces < 3 {
-            q += 1;
-            spaces += 1;
-        }
+    let content_on_last_line = frame.first_child != u32::MAX && frame.last_child_end > ls;
+    if ls > line1_end && (fence_char == b'`' || fence_char == b'~') && !content_on_last_line {
+        let mut q = skip_container_prefix(bytes, ls, trimmed.end);
         let run_start = q;
         while q < trimmed.end && bytes[q as usize] == fence_char {
             q += 1;
         }
         let run_len = q - run_start;
         let mut rest = q;
-        while rest < trimmed.end && (bytes[rest as usize] == b' ' || bytes[rest as usize] == b'\t') {
+        while rest < trimmed.end && matches!(bytes[rest as usize], b' ' | b'\t' | b'\r') {
             rest += 1;
         }
         if run_len >= 3 && run_len >= (open_run_end - p) && rest == trimmed.end {

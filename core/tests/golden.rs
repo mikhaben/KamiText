@@ -1668,3 +1668,132 @@ fn parse_guard_leaves_normal_documents_untouched() {
         ]
     );
 }
+
+// ------------------------------------------- container-indented block markers
+
+fn none_engine(text: &str) -> Engine {
+    Engine::new(
+        text,
+        EngineOptions {
+            reveal: RevealMode::None,
+            ..EngineOptions::default()
+        },
+    )
+}
+
+/// The concealed-marker byte runs of `e`, as source strings.
+fn concealed_runs(e: &Engine) -> Vec<String> {
+    e.segments_in(ByteRange::new(0, e.len_bytes()))
+        .iter()
+        .filter(|s| s.concealed)
+        .map(|s| e.text()[s.range.start as usize..s.range.end as usize].to_string())
+        .collect()
+}
+
+/// A fence inside a nested list item sits behind the container's own
+/// indentation (4 spaces, or 2 tabs in Obsidian's default indent style), past
+/// the 3-space allowance a top-level closing fence gets. The closing run must
+/// still conceal like the opening one, not render as a raw code line.
+#[test]
+fn closing_fence_in_nested_list_item_conceals() {
+    for text in [
+        "- a\n  - b\n\n    ```py\n    x\n    ```\n",
+        "- a\n\t- b\n\n\t\t```py\n\t\tx\n\t\t```\n",
+        "1. a\n   1. b\n\n      ~~~\n      x\n      ~~~\n",
+    ] {
+        let e = none_engine(text);
+        common::assert_invariants(&e);
+        let runs = concealed_runs(&e);
+        assert_eq!(runs.len(), if text.contains("py") { 3 } else { 2 }, "{text:?}: {runs:?}");
+        let close = runs.last().unwrap();
+        assert!(close == "```" || close == "~~~", "{text:?}: closing fence not concealed: {runs:?}");
+        let code: Vec<&str> = e
+            .segments_in(ByteRange::new(0, e.len_bytes()))
+            .iter()
+            .filter(|s| s.kinds.contains(Kind::CODE_BLOCK))
+            .map(|s| &text[s.range.start as usize..s.range.end as usize])
+            .collect();
+        assert!(code.iter().all(|c| !c.contains("```") && !c.contains("~~~")), "{text:?}: fence in code: {code:?}");
+    }
+}
+
+/// Neighbor of the fix above: an UNCLOSED fence whose last line is deeper
+/// indented fence-lookalike content (pulldown keeps it as code text) must
+/// stay code — only a line pulldown did not claim as content is the closer.
+#[test]
+fn indented_fence_lookalike_content_stays_code() {
+    let text = "- a\n  - b\n\n    ```\n    x\n         ```\n";
+    let e = none_engine(text);
+    common::assert_invariants(&e);
+    assert_eq!(concealed_runs(&e), vec!["```"]);
+}
+
+/// A setext underline inside a nested list item conceals like a top-level one.
+#[test]
+fn setext_underline_in_nested_list_item_conceals() {
+    for (text, underline) in [
+        ("- a\n  - b\n\n    Title\n    -----\n", "-----"),
+        ("- a\n\t- b\n\n\t\tTitle\n\t\t=====\n", "====="),
+    ] {
+        let e = none_engine(text);
+        common::assert_invariants(&e);
+        assert_eq!(concealed_runs(&e), vec![underline], "{text:?}");
+    }
+}
+
+/// A blockquote inside a nested list item: every line's own `> ` conceals,
+/// not just the first one.
+#[test]
+fn blockquote_continuation_in_nested_list_item_conceals() {
+    for text in [
+        "- a\n  - > q\n    > r\n",
+        "- a\n\t- > q\n\t  > r\n",
+        "> - a\n>   - > q\n>     > r\n",
+    ] {
+        let e = none_engine(text);
+        common::assert_invariants(&e);
+        let quote_marks = e
+            .segments_in(ByteRange::new(0, e.len_bytes()))
+            .iter()
+            .filter(|s| s.concealed && s.kinds.contains(Kind::BLOCKQUOTE))
+            .count();
+        let expected = text.matches("> ").count();
+        assert_eq!(quote_marks, expected, "{text:?}: {:?}", concealed_runs(&e));
+    }
+}
+
+/// Neighbor of the fix above: a 4-space-indented `>` after a top-level quote
+/// line is lazy paragraph text (indentation >= 4 cannot open a quote), so it
+/// stays visible.
+#[test]
+fn indented_lazy_quote_lookalike_stays_visible() {
+    let e = none_engine("> a\n    > b\n");
+    common::assert_invariants(&e);
+    assert_eq!(concealed_runs(&e), vec!["> "]);
+}
+
+/// Fence info is the trimmed info string: a CRLF line ending's `\r` and
+/// surrounding tabs are not part of it, so hosts never read `"\r"` or
+/// `"py \r"` as a language.
+#[test]
+fn fence_info_excludes_cr_and_tabs() {
+    for (text, info) in [
+        ("```\r\nx\r\n```\r\n", ""),
+        ("```py \r\nx\r\n```\r\n", "py"),
+        ("~~~\tpy\t\nx\n~~~\n", "py"),
+    ] {
+        let e = none_engine(text);
+        common::assert_invariants(&e);
+        let els = e.elements_in(ByteRange::new(0, e.len_bytes()));
+        let ElementKind::Fence { info: r } = els[0].kind else { panic!("no fence in {text:?}") };
+        assert_eq!(&text[r.start as usize..r.end as usize], info, "{text:?}");
+        let info_segs: Vec<&str> = e
+            .segments_in(ByteRange::new(0, e.len_bytes()))
+            .iter()
+            .filter(|s| s.kinds.contains(Kind::FENCE_INFO))
+            .map(|s| &text[s.range.start as usize..s.range.end as usize])
+            .collect();
+        let expected: Vec<&str> = if info.is_empty() { vec![] } else { vec![info] };
+        assert_eq!(info_segs, expected, "{text:?}");
+    }
+}
