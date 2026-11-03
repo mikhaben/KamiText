@@ -36,7 +36,7 @@ a code pointer · **Upstream**: FB number if filed, else `none filed` · **Retes
 - **Status**: Active-workaround
 - **Affected**: macOS, AppKit `NSTextView` (Cmd+Z / Cmd+Shift+Z, menu or keyboard). Versions: not recorded.
 - **Symptom**: Undo/redo mutates `NSTextStorage` without firing `shouldChangeTextIn`/`textDidChange` — only a selection-change delegate call follows, so `KamiTextSync` never sees the edit through its normal `willChange`/`didChange` path.
-- **Workaround**: `KamiTextSync.selectionChanged` detects the resulting `engine.lenUtf16 != storage.length` mismatch with no edit in flight and reseeds from scratch (`KamiTextSync.swift:300-311`). A length-preserving undo does not trip that guard and instead heals on the next length-changing edit, by design — see entry in [Negative findings](#negative-findings). Header doc: `KamiTextSync.swift:25-28`. Code pointer: `AGENTS.md:79`. Bulletproof coverage recipe (not wired by default): hosts add an `NSTextStorageDelegate.didProcessEditing` hook (`KamiTextSync.swift:28`).
+- **Workaround**: the production Mac app coordinator observes `NSTextStorageDelegate.didProcessEditing`, forwards dirty tracking to EditorSession, and marks unannounced character edits for recovery before the next managed edit or selection callback. Ordinary managed edits and active composition remain excluded; recovery restyles in place. `KamiTextSync.selectionChanged` alone detects only length mismatch. Production regression: `KamiNotesMacOS/Tests/KamiNotesMacAppTests/EditorSemanticTests.swift` invokes native UndoManager undo, inserts elsewhere and checks full engine/storage parity.
 - **Upstream**: none filed.
 - **Retest**: 2026-10-12.
 
@@ -102,18 +102,6 @@ separately-applied font sets the way an AST-descent styler would — there is no
 `bindings/swift/KamiTextKit/Tests/KamiTextKitTests/KamiThemeTests.swift:29-37`
 (`headingPlusStrongPreservesHeadingSizeAndAddsBoldTrait`: heading point size preserved,
 bold trait added), pinned by `KamiThemeTests.swift:29-37`.
-
-### Length-preserving undo heals on the next length change, by design
-
-**Status**: Not-a-bug. A length-preserving AppKit undo (e.g. toggling a single
-character back) fires only a selection-change delegate call, which cannot distinguish
-it from a normal caret move because `engine.lenUtf16 == storage.length` still holds —
-so `KamiTextSync` does not reseed for it immediately. The next length-changing edit
-resyncs it correctly regardless, because that edit's own `willChange`/`didChange`
-path re-derives state from the current storage content. This is accepted behavior,
-not a gap to close with more machinery — see `KamiTextSync.swift:25-28` before
-attempting a fix. Hosts wanting bulletproof coverage of this specific window can add
-the `NSTextStorageDelegate.didProcessEditing` hook the same doc comment prescribes.
 
 ### TextKit 2: geometry queries outside the viewport degrade tap hit-testing (iOS)
 

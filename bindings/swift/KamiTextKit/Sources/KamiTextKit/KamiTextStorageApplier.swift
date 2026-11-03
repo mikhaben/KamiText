@@ -23,6 +23,9 @@ public struct KamiTextStorageApplier {
     /// `theme.checkedTaskOverlayAttributes()`. A reference type so struct
     /// copies of the applier (sharing the same `theme`) share one cache.
     private let memo = AttributeMemo()
+    #if DEBUG
+    var checkedParagraphVisits: Int { memo.checkedParagraphVisits }
+    #endif
 
     public init(theme: any KamiTheme = DefaultKamiTheme()) {
         self.theme = theme
@@ -274,10 +277,22 @@ public struct KamiTextStorageApplier {
         }
         guard ownMarkerEndU16 >= 0 else { return }
         let ns = storage.mutableString
-        // First blank (whitespace-only) line after the marker's own line.
         var capU16 = Int.max
+        index = ownMarkerIndex
+        while index < segments.count {
+            let segment = segments[index]
+            index += 1
+            guard segment.kinds.contains(.taskMarker) || segment.kinds.contains(.listBullet)
+                      || segment.kinds.contains(.listOrdinal),
+                  let marker = nsRange(segment.utf16Range, clampedTo: length) else { continue }
+            capU16 = ns.paragraphRange(for: marker).location
+            break
+        }
         var lineStart = NSMaxRange(ns.paragraphRange(for: NSRange(location: ownMarkerEndU16 - 1, length: 0)))
-        while lineStart < length {
+        while lineStart < Swift.min(length, capU16) {
+            #if DEBUG
+            memo.checkedParagraphVisits += 1
+            #endif
             let para = ns.paragraphRange(for: NSRange(location: lineStart, length: 0))
             guard para.length > 0 else { break }
             var isBlank = true
@@ -291,19 +306,9 @@ public struct KamiTextStorageApplier {
             }
             lineStart = NSMaxRange(para)
         }
-        // Next item marker before that blank, if any — its line caps tighter.
-        index = ownMarkerIndex
-        while index < segments.count, Int(segments[index].utf16Range.lowerBound) < capU16 {
-            let segment = segments[index]
-            index += 1
-            guard segment.kinds.contains(.taskMarker) || segment.kinds.contains(.listBullet)
-                      || segment.kinds.contains(.listOrdinal),
-                  let marker = nsRange(segment.utf16Range, clampedTo: length) else { continue }
-            capU16 = Swift.min(capU16, ns.paragraphRange(for: marker).location)
-            break
-        }
         index = low
-        while index < segments.count, segments[index].range.lowerBound < element.range.upperBound {
+        while index < segments.count, segments[index].range.lowerBound < element.range.upperBound,
+              Int(segments[index].utf16Range.lowerBound) < capU16 {
             let segment = segments[index]
             index += 1
             guard !segment.kinds.contains(.marker), !segment.kinds.contains(.taskMarker),
@@ -329,6 +334,9 @@ public struct KamiTextStorageApplier {
 /// this box, which is sound because they share the same immutable `theme`.
 @MainActor
 private final class AttributeMemo {
+    #if DEBUG
+    var checkedParagraphVisits = 0
+    #endif
     var segment: [UInt64: [NSAttributedString.Key: Any]] = [:]
     var checkedTaskOverlay: [NSAttributedString.Key: Any]?
     /// List-prefix rendered widths ("- ", "1. ", "  - "…) — see

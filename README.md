@@ -12,7 +12,7 @@ I wanted hidden-syntax live editing for a notes app I was building and couldn't 
 
 - **Hidden-syntax live editing** — markers conceal on inactive lines, reveal at the caret; the text is never mutated for display, so byte offsets always match the file on disk
 - **CommonMark + GFM** (tables, task lists, strikethrough — each toggleable) via pulldown-cmark
-- **Patch-based updates** — each edit returns exactly the byte ranges whose styling changed; adapters restyle only those, so keystroke cost stays flat regardless of document size
+- **Patch-based updates** — edits report changed style ranges so adapters can limit attribute rewrites. The engine still reparses the document, and host overlay work can depend on document size.
 - **UTF-16 offset conversion built in** — Apple, Kotlin, and JS adapters never do their own emoji math
 - **Typing behaviors as data** — list/quote/task continuation and checkbox toggling come back as edit plans the host applies through its own undo stack
 - **Conformance fixtures** — golden JSON fixtures in `fixtures/`; an adapter that replays them correctly is behaviorally identical to the reference
@@ -28,7 +28,7 @@ I wanted hidden-syntax live editing for a notes app I was building and couldn't 
 | 250 KB synthetic | 1.49 ms | 1.52 ms |
 | 198 KB real doc (`corpora/fpb-langs.md`, 0.50 marker density) | 1.48 ms | 1.47 ms |
 
-Column definitions: `apply_edit` is the engine keystroke (validate → splice → reparse → conceal → diff, patch returned) — the engine's keystroke budget (p50 < 3 ms, p99 < 8 ms @ 250 KB) applies to this column, and measures p50 1.49 ms / p99 1.75 ms over 2,000 keystrokes (`cargo run --release --example profile`). The second column adds the adapter's segment re-fetch over the patch's dirty ranges (criterion medians, `cargo bench`). Adapter attribute writes are O(patch) on top. Opening a document is a one-time full parse: `Engine::new` at 250 KB measures ~2.1 ms.
+Column definitions: `apply_edit` is the engine keystroke (validate → splice → reparse → conceal → diff, patch returned) — the engine's keystroke budget (p50 < 3 ms, p99 < 8 ms @ 250 KB) applies to this column, and measures p50 1.49 ms / p99 1.75 ms over 2,000 keystrokes (`cargo run --release --example profile`). The second column adds the adapter's segment re-fetch over the patch's dirty ranges (criterion medians, `cargo bench`). These columns exclude native attribute application, paragraph widening, overlay reconciliation and rendering. Opening a document is a one-time full parse: `Engine::new` at 250 KB measures ~2.1 ms.
 
 ## Quick Start
 

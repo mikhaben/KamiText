@@ -22,10 +22,6 @@ import AppKit
 /// specifics stay out of this type — adapters own them).
 ///
 /// Host caveats (AppKit, empirically verified):
-/// - **Undo/redo** fires neither edit hook — only a selection change. A
-///   length-changing undo is recovered here (see `selectionChanged`); a
-///   length-preserving one heals on the next length change. For bulletproof
-///   coverage, hosts add an `NSTextStorageDelegate.didProcessEditing` hook.
 /// - **Multi-range edits** (multi-cursor, Replace All): implement the plural
 ///   `shouldChangeTextInRanges` delegate and call `willChange` only for
 ///   single-range edits — multi-range didChange then reseeds via fallback.
@@ -75,6 +71,10 @@ public final class KamiTextSync {
     /// Reseeding (`seed`) resets it from scratch; selection-only changes
     /// never touch it.
     private var checkedTaskByteRanges: [Range<UInt32>] = []
+    #if DEBUG
+    private(set) var checkedCoverageComparisons = 0
+    var checkedParagraphVisits: Int { applier.checkedParagraphVisits }
+    #endif
 
     public init(theme: any KamiTheme = DefaultKamiTheme(), options: KamiEngine.Options = .init()) {
         self.applier = KamiTextStorageApplier(theme: theme)
@@ -257,6 +257,8 @@ public final class KamiTextSync {
         let replacementByteLen = UInt32(replacement.utf8.count)
         let totalBytes = engine.lenBytes
         let freshChecked = try checkedTaskRanges(engine: engine)
+        var next = 0
+        var coveredEnd: UInt32 = 0
 
         for previous in checkedTaskByteRanges {
             let shifted = shiftedByteRange(
@@ -265,9 +267,17 @@ public final class KamiTextSync {
                 replacementByteLen: replacementByteLen, totalBytes: totalBytes
             )
             guard !shifted.isEmpty else { continue }
-            let stillCovered = freshChecked.contains {
-                $0.lowerBound <= shifted.lowerBound && $0.upperBound >= shifted.upperBound
+            #if DEBUG
+            checkedCoverageComparisons += 1
+            #endif
+            while next < freshChecked.count, freshChecked[next].lowerBound <= shifted.lowerBound {
+                #if DEBUG
+                checkedCoverageComparisons += 1
+                #endif
+                coveredEnd = max(coveredEnd, freshChecked[next].upperBound)
+                next += 1
             }
+            let stillCovered = coveredEnd >= shifted.upperBound
             guard !stillCovered else { continue }
             try applier.apply(KamiPatch(dirty: [shifted]), engine: engine, to: storage)
         }
@@ -331,13 +341,6 @@ public final class KamiTextSync {
     public func selectionChanged(selectedRange: NSRange, text: String, storage: NSTextStorage, isComposing: Bool) -> Bool {
         guard pendingEdit == nil, !isComposing, let engine else { return false }
         guard engine.lenUtf16 == UInt32(storage.length) else {
-            // Undo/redo bypasses both edit hooks on AppKit (verified: Cmd+Z
-            // fires only a selection change) — a length mismatch here with no
-            // edit in flight IS a desync, so recover instead of going
-            // silent. A length-preserving undo still slips past this guard
-            // until the next length change; hosts wanting bulletproof undo
-            // coverage add an `NSTextStorageDelegate.didProcessEditing` hook
-            // and reseed from there.
             log("length desync with no edit in flight (undo/redo?); reseeding")
             seed(text: text, storage: storage, selectedRange: selectedRange)
             return true

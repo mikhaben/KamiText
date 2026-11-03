@@ -17,6 +17,7 @@ Swift (from `bindings/swift/KamiTextKit/`) — requires the xcframework bootstra
 
 - `../build-xcframework.sh` — Rust release builds for 4 Apple targets → `KamiCore.xcframework`; needs `rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-ios-macabi` once, or it fails with "can't find crate for `core`". Rerun after ANY Rust change or the package links a stale core. The script defaults `CARGO` to `~/.cargo/bin/cargo`; with a Homebrew rustup, run `CARGO=$(which cargo) ../build-xcframework.sh`
 - `swift build` / `swift test` — native macOS build + conformance/regression tests
+- `swift test -c release --filter ChecklistWorkTests.releaseChecklistSamples` — Swift adapter checklist seed and separate-body edit samples; debug `ChecklistWorkTests.deterministicWorkIsBounded` guards traversal counts without timing thresholds.
 - `swift run KamiDemoMac` — macOS demo window; `--selftest` = headless gate (seed + keystroke sync + reveal assertions, exits 0)
 - Catalyst/iOS test destinations: `xcodebuild test -scheme KamiTextKit -destination 'platform=macOS,variant=Mac Catalyst' -derivedDataPath .dd CODE_SIGNING_ALLOWED=NO`
 
@@ -39,6 +40,6 @@ One edit flows: `Engine::apply_edit` validates (reject, never repair) → `Docum
 - SourceKit shows phantom "Cannot find type / No such module" errors in package sources until the first `swift build` — trust the compiler, not the IDE diagnostics.
 - Files using `NSAttributedString.Key.font` etc. need the `#if canImport(UIKit) import UIKit #else import AppKit` block themselves — typealiases cross the module, extension visibility doesn't.
 - Never touch `.layoutManager` on a text view (silently downgrades TextKit 2 → 1); `.textStorage` is safe.
-- AppKit undo fires NO edit delegate — only a selection change; `KamiTextSync.selectionChanged` reseeds on length desync, and a length-preserving undo heals on the next length change (see its doc comment before "fixing" this).
+- AppKit undo can bypass edit delegates. The production Mac host's storage observer distinguishes unannounced character changes from managed edits and composition; a length check alone cannot recover equal-length undo. See `PLATFORM_BUGS.md` and the Mac app's `EditorSemanticTests`.
 - AppKit hosts should implement the **plural** `shouldChangeTextInRanges` (AppKit then calls only it) and stash single-range edits only — see `KamiDemoMac/main.swift`.
 - The parser is pulldown-cmark, NOT `swift-markdown` — offset semantics differ across markdown parsers, and pulldown emits byte offsets directly, which is what the whole coordinate system assumes.
